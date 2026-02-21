@@ -11,6 +11,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
+	"github.com/georgemunganga/printa-backend/internal/modules/routing"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
@@ -70,6 +71,11 @@ func main() {
 	orderRepo := order.NewPostgresRepository(db)
 	orderService := order.NewService(orderRepo)
 	order.NewHandler(orderService).RegisterRoutes(router)
+
+	// ── Phase 4: Deterministic Routing Engine ─────────────────
+	routingRepo := routing.NewPostgresRepository(db)
+	routingService := routing.NewService(routingRepo)
+	routing.NewHandler(routingService).RegisterRoutes(router)
 
 	// ── Start Server ─────────────────────────────────────────
 	port := os.Getenv("APP_PORT")
