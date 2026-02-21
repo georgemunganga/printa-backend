@@ -1,0 +1,24 @@
+# Environment & secrets
+.env
+ca.pem
+
+# Go binaries
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+
+# Go test binary
+*.test
+
+# Go coverage
+*.out
+
+# Downloaded archives
+*.tar.gz
+*.zip
+
+# IDE
+.vscode/
+.idea/
