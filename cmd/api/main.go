@@ -7,7 +7,8 @@ import (
 	"net/http"
 	"os"
 
-	"github.com/georgemunganga/printa-backend/internal/modules/auth"
+"github.com/georgemunganga/printa-backend/internal/modules/auth"
+	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/go-chi/chi/v5"
 	"github.com/joho/godotenv"
@@ -43,6 +44,12 @@ func main() {
 
 	userHandler.RegisterRoutes(router)
 	authHandler.RegisterRoutes(router)
+
+	vendorTierRepo := vendor.NewTierPostgresRepository(db)
+	vendorRepo := vendor.NewPostgresRepository(db)
+	vendorService := vendor.NewService(vendorRepo, vendorTierRepo)
+	vendorHandler := vendor.NewHandler(vendorService)
+	vendorHandler.RegisterRoutes(router)
 
 	port := os.Getenv("APP_PORT")
 	if port == "" {
