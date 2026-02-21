@@ -102,21 +102,23 @@ func (r *postgresRepo) UpdateDecisionStatus(ctx context.Context, id string, stat
 	return err
 }
 
-// GetStoreCandidates returns all stores that stock at least one product from the order.
-// NOTE: production_jobs join is added in Phase 5 once that table exists.
+// GetStoreCandidates returns all stores that stock at least one product from the order,
+// along with their current active production job count for load-balancing.
 func (r *postgresRepo) GetStoreCandidates(ctx context.Context, orderID string) ([]*StoreCandidate, error) {
 	rows, err := r.db.QueryContext(ctx, `
 		SELECT
 		    s.id,
 		    s.name,
 		    COUNT(DISTINCT vsp.id) AS product_matches,
-		    0 AS active_jobs
+		    COALESCE((SELECT COUNT(*) FROM production_jobs pj
+		              WHERE pj.store_id = s.id
+		              AND pj.status IN ('QUEUED','IN_PROGRESS')), 0) AS active_jobs
 		FROM stores s
 		JOIN vendor_store_products vsp ON vsp.store_id = s.id AND vsp.is_available = TRUE
 		JOIN order_items oi ON oi.vendor_store_product_id = vsp.id
 		JOIN orders o ON o.id = oi.order_id AND o.id = $1
 		GROUP BY s.id, s.name
-		ORDER BY product_matches DESC`, orderID)
+		ORDER BY active_jobs ASC, product_matches DESC`, orderID)
 	if err != nil {
 		return nil, err
 	}

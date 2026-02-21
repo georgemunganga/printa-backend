@@ -11,6 +11,8 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
+	"github.com/georgemunganga/printa-backend/internal/modules/pos"
+	"github.com/georgemunganga/printa-backend/internal/modules/production"
 	"github.com/georgemunganga/printa-backend/internal/modules/routing"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
@@ -76,6 +78,15 @@ func main() {
 	routingRepo := routing.NewPostgresRepository(db)
 	routingService := routing.NewService(routingRepo)
 	routing.NewHandler(routingService).RegisterRoutes(router)
+
+	// ── Phase 5: Production & POS ───────────────────────────
+	productionRepo := production.NewPostgresRepository(db)
+	productionService := production.NewService(productionRepo)
+	production.NewHandler(productionService).RegisterRoutes(router)
+
+	posRepo := pos.NewPostgresRepository(db)
+	posService := pos.NewService(posRepo)
+	pos.NewHandler(posService).RegisterRoutes(router)
 
 	// ── Start Server ─────────────────────────────────────────
 	port := os.Getenv("APP_PORT")
