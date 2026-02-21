@@ -7,10 +7,13 @@ import (
 	"net/http"
 	"os"
 
-"github.com/georgemunganga/printa-backend/internal/modules/auth"
-	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
+	"github.com/georgemunganga/printa-backend/internal/modules/auth"
+	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
+	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
+	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
+	"github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
@@ -30,32 +33,43 @@ func main() {
 	if err := db.Ping(); err != nil {
 		log.Fatal(err)
 	}
-
 	fmt.Println("Successfully connected to the database!")
 
+	// ── Router ──────────────────────────────────────────────
+	router := chi.NewRouter()
+	router.Use(middleware.Logger)
+	router.Use(middleware.Recoverer)
+	router.Use(middleware.RequestID)
+
+	// ── Phase 1: Identity & Business ────────────────────────
 	userRepo := user.NewPostgresRepository(db)
 	userService := user.NewService(userRepo)
-	userHandler := user.NewHandler(userService)
+	user.NewHandler(userService).RegisterRoutes(router)
 
 	authService := auth.NewService(userRepo)
-	authHandler := auth.NewHandler(authService)
-
-	router := chi.NewRouter()
-
-	userHandler.RegisterRoutes(router)
-	authHandler.RegisterRoutes(router)
+	auth.NewHandler(authService).RegisterRoutes(router)
 
 	vendorTierRepo := vendor.NewTierPostgresRepository(db)
 	vendorRepo := vendor.NewPostgresRepository(db)
 	vendorService := vendor.NewService(vendorRepo, vendorTierRepo)
-	vendorHandler := vendor.NewHandler(vendorService)
-	vendorHandler.RegisterRoutes(router)
+	vendor.NewHandler(vendorService).RegisterRoutes(router)
 
+	// ── Phase 2: Catalog & Inventory ────────────────────────
+	catalogRepo := catalog.NewPostgresRepository(db)
+	catalogService := catalog.NewService(catalogRepo)
+	catalog.NewHandler(catalogService).RegisterRoutes(router)
+
+	storeRepo := inventory.NewStorePostgresRepository(db)
+	staffRepo := inventory.NewStoreStaffPostgresRepository(db)
+	productRepo := inventory.NewProductPostgresRepository(db)
+	inventoryService := inventory.NewService(storeRepo, staffRepo, productRepo)
+	inventory.NewHandler(inventoryService).RegisterRoutes(router)
+
+	// ── Start Server ─────────────────────────────────────────
 	port := os.Getenv("APP_PORT")
 	if port == "" {
 		port = "8080"
 	}
-
-	fmt.Printf("Server starting on port %s\n", port)
+	fmt.Printf("Printa API server starting on :%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
 }
