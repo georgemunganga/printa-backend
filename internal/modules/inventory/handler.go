@@ -3,6 +3,7 @@ package inventory
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -30,6 +31,11 @@ func (h *Handler) RegisterRoutes(r *chi.Mux) {
 		r.Patch("/products/{id}/stock", h.updateStock)
 		r.Patch("/products/{id}/availability", h.setAvailability)
 	})
+}
+
+// isDuplicateKey returns true when the error is a PostgreSQL unique constraint violation (code 23505).
+func isDuplicateKey(err error) bool {
+	return strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key")
 }
 
 func (h *Handler) createStore(w http.ResponseWriter, r *http.Request) {
@@ -82,6 +88,12 @@ func (h *Handler) addStaff(w http.ResponseWriter, r *http.Request) {
 	}
 	staff, err := h.service.AddStaff(r.Context(), storeID, body.UserID, body.Role)
 	if err != nil {
+		if isDuplicateKey(err) {
+			respond(w, http.StatusConflict, map[string]string{
+				"error": "this user is already a staff member of this store",
+			})
+			return
+		}
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
@@ -118,6 +130,12 @@ func (h *Handler) addProduct(w http.ResponseWriter, r *http.Request) {
 	req.StoreID = storeID
 	p, err := h.service.AddProduct(r.Context(), req)
 	if err != nil {
+		if isDuplicateKey(err) {
+			respond(w, http.StatusConflict, map[string]string{
+				"error": "this product is already listed in this store",
+			})
+			return
+		}
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
