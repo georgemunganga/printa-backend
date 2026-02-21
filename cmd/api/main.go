@@ -10,6 +10,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/auth"
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
+	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
@@ -64,6 +65,11 @@ func main() {
 	productRepo := inventory.NewProductPostgresRepository(db)
 	inventoryService := inventory.NewService(storeRepo, staffRepo, productRepo)
 	inventory.NewHandler(inventoryService).RegisterRoutes(router)
+
+	// ── Phase 3: Order Management ───────────────────────────
+	orderRepo := order.NewPostgresRepository(db)
+	orderService := order.NewService(orderRepo)
+	order.NewHandler(orderService).RegisterRoutes(router)
 
 	// ── Start Server ─────────────────────────────────────────
 	port := os.Getenv("APP_PORT")
