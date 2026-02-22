@@ -12,6 +12,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/billing"
+	"github.com/georgemunganga/printa-backend/internal/modules/payment"
 	"github.com/georgemunganga/printa-backend/internal/modules/pos"
 	"github.com/georgemunganga/printa-backend/internal/modules/production"
 	"github.com/georgemunganga/printa-backend/internal/modules/routing"
@@ -93,6 +94,25 @@ func main() {
 	billingRepo := billing.NewPostgresRepository(db)
 	billingService := billing.NewService(billingRepo)
 	billing.NewHandler(billingService).RegisterRoutes(router)
+
+	// ── Phase 7: Pluggable Payments ─────────────────────────────
+	paymentGateways := payment.GatewayRegistry{
+		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(
+			os.Getenv("MTN_MOMO_API_KEY"),
+			os.Getenv("MTN_MOMO_API_SECRET"),
+			os.Getenv("MTN_MOMO_BASE_URL"),
+			os.Getenv("MTN_MOMO_ENV"),
+		),
+		payment.ProviderAirtel: payment.NewAirtelMoneyGateway(
+			os.Getenv("AIRTEL_CLIENT_ID"),
+			os.Getenv("AIRTEL_CLIENT_SECRET"),
+			os.Getenv("AIRTEL_BASE_URL"),
+			os.Getenv("AIRTEL_ENV"),
+		),
+	}
+	paymentRepo := payment.NewPostgresRepository(db)
+	paymentService := payment.NewService(paymentRepo, paymentGateways)
+	payment.NewHandler(paymentService).RegisterRoutes(router)
 
 	// ── Start Server ─────────────────────────────────────────
 	port := os.Getenv("APP_PORT")
