@@ -9,6 +9,7 @@ import (
 
 	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/auth"
+	"github.com/georgemunganga/printa-backend/internal/modules/admin"
 	"github.com/georgemunganga/printa-backend/internal/modules/billing"
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
@@ -79,6 +80,9 @@ func main() {
 	billingRepo := billing.NewPostgresRepository(db)
 	billingService := billing.NewService(billingRepo)
 
+	adminRepo := admin.NewPostgresRepository(db)
+	adminService := admin.NewService(adminRepo)
+
 	paymentGateways := payment.GatewayRegistry{
 		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(
 			os.Getenv("MTN_MOMO_API_KEY"),
@@ -134,6 +138,9 @@ func main() {
 
 		// Billing
 		billing.NewHandler(billingService).RegisterRoutes(r)
+
+		// Admin platform management
+		admin.NewHandler(adminService).RegisterRoutes(r)
 
 		// Payments (protected)
 		payment.NewHandler(paymentService).RegisterProtectedRoutes(r)
