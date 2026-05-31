@@ -2,17 +2,21 @@ package main
 
 import (
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"log"
 	"net/http"
 	"os"
+	"time"
 
 	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
-	"github.com/georgemunganga/printa-backend/internal/modules/auth"
 	"github.com/georgemunganga/printa-backend/internal/modules/admin"
+	"github.com/georgemunganga/printa-backend/internal/modules/auth"
 	"github.com/georgemunganga/printa-backend/internal/modules/billing"
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
+	"github.com/georgemunganga/printa-backend/internal/modules/comms"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
+	"github.com/georgemunganga/printa-backend/internal/modules/notification"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/payment"
 	"github.com/georgemunganga/printa-backend/internal/modules/pos"
@@ -83,6 +87,16 @@ func main() {
 	adminRepo := admin.NewPostgresRepository(db)
 	adminService := admin.NewService(adminRepo)
 
+	notificationRepo := notification.NewPostgresRepository(db)
+	commsRepo := comms.NewPostgresRepository(db)
+	commsService := comms.NewService(commsRepo,
+		comms.NewEmailAdapter(),
+		comms.NewSMSAdapter(),
+		comms.NewPushAdapter(),
+		comms.NewWhatsAppAdapter(),
+	)
+	notificationService := notification.NewService(notificationRepo, comms.NewDispatcher(commsService))
+
 	paymentGateways := payment.GatewayRegistry{
 		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(
 			os.Getenv("MTN_MOMO_API_KEY"),
@@ -101,6 +115,8 @@ func main() {
 	paymentService := payment.NewService(paymentRepo, paymentGateways)
 
 	// ── PUBLIC ROUTES (no auth required) ────────────────────
+	router.Get("/", statusPage(db))
+	router.Get("/healthz", healthCheck(db))
 	// User registration
 	user.NewHandler(userService).RegisterPublicRoutes(router)
 	// Login
@@ -141,6 +157,8 @@ func main() {
 
 		// Admin platform management
 		admin.NewHandler(adminService).RegisterRoutes(r)
+		notification.NewHandler(notificationService).RegisterRoutes(r)
+		comms.NewHandler(commsService).RegisterRoutes(r)
 
 		// Payments (protected)
 		payment.NewHandler(paymentService).RegisterProtectedRoutes(r)
@@ -153,4 +171,78 @@ func main() {
 	}
 	fmt.Printf("Printa API server starting on :%s\n", port)
 	log.Fatal(http.ListenAndServe(":"+port, router))
+}
+
+func statusPage(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		dbStatus := "connected"
+		if err := db.PingContext(r.Context()); err != nil {
+			dbStatus = "unavailable"
+			w.WriteHeader(http.StatusServiceUnavailable)
+		}
+
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		fmt.Fprintf(w, `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Printa API Status</title>
+  <style>
+    body { margin: 0; font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; background: #0f172a; color: #e5e7eb; }
+    main { min-height: 100vh; display: grid; place-items: center; padding: 32px; box-sizing: border-box; }
+    section { width: min(720px, 100%%); border: 1px solid #334155; border-radius: 8px; padding: 28px; background: #111827; }
+    h1 { margin: 0 0 12px; font-size: 32px; line-height: 1.1; }
+    p { margin: 8px 0; color: #cbd5e1; font-size: 16px; }
+    dl { display: grid; grid-template-columns: 140px 1fr; gap: 10px 18px; margin: 24px 0 0; }
+    dt { color: #94a3b8; }
+    dd { margin: 0; color: #f8fafc; }
+    .ok { color: #86efac; font-weight: 700; }
+  </style>
+</head>
+<body>
+  <main>
+    <section>
+      <h1>Printa API</h1>
+      <p class="ok">Everything is live and working.</p>
+      <dl>
+        <dt>Service</dt><dd>online</dd>
+        <dt>Database</dt><dd>%s</dd>
+        <dt>Environment</dt><dd>%s</dd>
+        <dt>Checked at</dt><dd>%s</dd>
+      </dl>
+    </section>
+  </main>
+</body>
+</html>`, dbStatus, getenvDefault("APP_ENV", "production"), time.Now().UTC().Format(time.RFC3339))
+	}
+}
+
+func healthCheck(db *sql.DB) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		status := http.StatusOK
+		dbStatus := "connected"
+		if err := db.PingContext(r.Context()); err != nil {
+			status = http.StatusServiceUnavailable
+			dbStatus = "unavailable"
+		}
+
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(status)
+		_ = json.NewEncoder(w).Encode(map[string]string{
+			"service":     "printa-api",
+			"status":      "online",
+			"database":    dbStatus,
+			"environment": getenvDefault("APP_ENV", "production"),
+			"checked_at":  time.Now().UTC().Format(time.RFC3339),
+		})
+	}
+}
+
+func getenvDefault(key, fallback string) string {
+	value := os.Getenv(key)
+	if value == "" {
+		return fallback
+	}
+	return value
 }
