@@ -13,26 +13,29 @@ type Handler struct{ service Service }
 
 func NewHandler(service Service) *Handler { return &Handler{service: service} }
 
-func (h *Handler) RegisterRoutes(r *chi.Mux) {
-	r.Route("/api/v1/payments", func(r chi.Router) {
-		// Initiate a new payment
-		r.Post("/", h.initiate)
-		// GET a transaction by ID
-		r.Get("/{id}", h.getByID)
-		// Verify / poll current status from provider
-		r.Post("/{id}/verify", h.verify)
-		// Refund a completed transaction
-		r.Post("/{id}/refund", h.refund)
-		// List transactions for a reference entity
-		r.Get("/reference/{ref_type}/{ref_id}", h.listByReference)
-		// List transactions for a vendor
-		r.Get("/vendor/{vendor_id}", h.listByVendor)
-	})
+// RegisterRoutes registers all routes (legacy — kept for backward compat).
+func (h *Handler) RegisterRoutes(r chi.Router) {
+	h.RegisterWebhookRoutes(r)
+	h.RegisterProtectedRoutes(r)
+}
 
-	// Webhook endpoints — one per provider, no auth middleware (provider-signed)
+// RegisterWebhookRoutes registers provider webhook endpoints (no JWT required).
+func (h *Handler) RegisterWebhookRoutes(r chi.Router) {
 	r.Route("/api/v1/webhooks", func(r chi.Router) {
 		r.Post("/mtn-momo", h.webhookMTN)
 		r.Post("/airtel-money", h.webhookAirtel)
+	})
+}
+
+// RegisterProtectedRoutes registers payment endpoints that require JWT auth.
+func (h *Handler) RegisterProtectedRoutes(r chi.Router) {
+	r.Route("/api/v1/payments", func(r chi.Router) {
+		r.Post("/", h.initiate)
+		r.Get("/{id}", h.getByID)
+		r.Post("/{id}/verify", h.verify)
+		r.Post("/{id}/refund", h.refund)
+		r.Get("/reference/{ref_type}/{ref_id}", h.listByReference)
+		r.Get("/vendor/{vendor_id}", h.listByVendor)
 	})
 }
 
@@ -42,7 +45,6 @@ func (h *Handler) initiate(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	// Read idempotency key from header (preferred) or fall back to body field
 	if headerKey := r.Header.Get("Idempotency-Key"); headerKey != "" {
 		req.IdempotencyKey = headerKey
 	}
@@ -126,15 +128,11 @@ func (h *Handler) listByVendor(w http.ResponseWriter, r *http.Request) {
 // ── Webhook Handlers ──────────────────────────────────────────────────────────
 
 func (h *Handler) webhookMTN(w http.ResponseWriter, r *http.Request) {
-	// MTN MoMo sends a JSON callback when a payment is completed or failed.
-	// In production, verify the X-Callback-Signature header here.
 	var raw map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
 		return
 	}
-
-	// Map MTN MoMo webhook fields to our generic WebhookPayload
 	payload := WebhookPayload{
 		Provider:    string(ProviderMTNMomo),
 		ExternalRef: stringFromMap(raw, "externalId", "referenceId", "financialTransactionId"),
@@ -144,10 +142,8 @@ func (h *Handler) webhookMTN(w http.ResponseWriter, r *http.Request) {
 		PhoneNumber: stringFromMap(raw, "payer.partyId"),
 		RawPayload:  raw,
 	}
-
 	tx, err := h.service.HandleWebhook(r.Context(), payload)
 	if err != nil {
-		// Return 200 to prevent provider retries for unknown transactions
 		respond(w, http.StatusOK, map[string]string{"status": "ignored", "reason": err.Error()})
 		return
 	}
@@ -155,21 +151,15 @@ func (h *Handler) webhookMTN(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) webhookAirtel(w http.ResponseWriter, r *http.Request) {
-	// Airtel Money sends a JSON callback on payment completion.
-	// In production, verify the X-Signature header here.
 	var raw map[string]interface{}
 	if err := json.NewDecoder(r.Body).Decode(&raw); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid payload"})
 		return
 	}
-
-	// Map Airtel Money webhook fields to our generic WebhookPayload
-	// Airtel wraps data in a "transaction" object
 	txData, _ := raw["transaction"].(map[string]interface{})
 	if txData == nil {
 		txData = raw
 	}
-
 	payload := WebhookPayload{
 		Provider:    string(ProviderAirtel),
 		ExternalRef: stringFromMap(txData, "id", "airtel_money_id"),
@@ -179,7 +169,6 @@ func (h *Handler) webhookAirtel(w http.ResponseWriter, r *http.Request) {
 		PhoneNumber: stringFromMap(txData, "msisdn"),
 		RawPayload:  raw,
 	}
-
 	tx, err := h.service.HandleWebhook(r.Context(), payload)
 	if err != nil {
 		respond(w, http.StatusOK, map[string]string{"status": "ignored", "reason": err.Error()})
@@ -196,7 +185,6 @@ func respond(w http.ResponseWriter, status int, body interface{}) {
 	json.NewEncoder(w).Encode(body)
 }
 
-// stringFromMap tries multiple keys and returns the first non-empty string value.
 func stringFromMap(m map[string]interface{}, keys ...string) string {
 	for _, k := range keys {
 		if v, ok := m[k]; ok {

@@ -7,11 +7,12 @@ import (
 	"net/http"
 	"os"
 
+	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/auth"
+	"github.com/georgemunganga/printa-backend/internal/modules/billing"
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
-	"github.com/georgemunganga/printa-backend/internal/modules/billing"
 	"github.com/georgemunganga/printa-backend/internal/modules/payment"
 	"github.com/georgemunganga/printa-backend/internal/modules/pos"
 	"github.com/georgemunganga/printa-backend/internal/modules/production"
@@ -19,15 +20,14 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
-	"github.com/go-chi/chi/v5/middleware"
+	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
 )
 
 func main() {
-	err := godotenv.Load()
-	if err != nil {
-		log.Fatal("Error loading .env file")
+	if err := godotenv.Load(); err != nil {
+		log.Println("No .env file found, using environment variables")
 	}
 
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
@@ -37,65 +37,48 @@ func main() {
 	defer db.Close()
 
 	if err := db.Ping(); err != nil {
-		log.Fatal(err)
+		log.Fatal("Database connection failed:", err)
 	}
 	fmt.Println("Successfully connected to the database!")
 
 	// ── Router ──────────────────────────────────────────────
 	router := chi.NewRouter()
-	router.Use(middleware.Logger)
-	router.Use(middleware.Recoverer)
-	router.Use(middleware.RequestID)
+	router.Use(chiMiddleware.Logger)
+	router.Use(chiMiddleware.Recoverer)
+	router.Use(chiMiddleware.RequestID)
 
-	// ── Phase 1: Identity & Business ────────────────────────
+	// ── Services & Repositories ──────────────────────────────
 	userRepo := user.NewPostgresRepository(db)
 	userService := user.NewService(userRepo)
-	user.NewHandler(userService).RegisterRoutes(router)
-
 	authService := auth.NewService(userRepo)
-	auth.NewHandler(authService).RegisterRoutes(router)
 
 	vendorTierRepo := vendor.NewTierPostgresRepository(db)
 	vendorRepo := vendor.NewPostgresRepository(db)
 	vendorService := vendor.NewService(vendorRepo, vendorTierRepo)
-	vendor.NewHandler(vendorService).RegisterRoutes(router)
 
-	// ── Phase 2: Catalog & Inventory ────────────────────────
 	catalogRepo := catalog.NewPostgresRepository(db)
 	catalogService := catalog.NewService(catalogRepo)
-	catalog.NewHandler(catalogService).RegisterRoutes(router)
 
 	storeRepo := inventory.NewStorePostgresRepository(db)
 	staffRepo := inventory.NewStoreStaffPostgresRepository(db)
 	productRepo := inventory.NewProductPostgresRepository(db)
 	inventoryService := inventory.NewService(storeRepo, staffRepo, productRepo)
-	inventory.NewHandler(inventoryService).RegisterRoutes(router)
 
-	// ── Phase 3: Order Management ───────────────────────────
 	orderRepo := order.NewPostgresRepository(db)
 	orderService := order.NewService(orderRepo)
-	order.NewHandler(orderService).RegisterRoutes(router)
 
-	// ── Phase 4: Deterministic Routing Engine ─────────────────
 	routingRepo := routing.NewPostgresRepository(db)
 	routingService := routing.NewService(routingRepo)
-	routing.NewHandler(routingService).RegisterRoutes(router)
 
-	// ── Phase 5: Production & POS ───────────────────────────
 	productionRepo := production.NewPostgresRepository(db)
 	productionService := production.NewService(productionRepo)
-	production.NewHandler(productionService).RegisterRoutes(router)
 
 	posRepo := pos.NewPostgresRepository(db)
 	posService := pos.NewService(posRepo)
-	pos.NewHandler(posService).RegisterRoutes(router)
 
-	// ── Phase 6: Vendor Subscriptions & Billing ──────────────────
 	billingRepo := billing.NewPostgresRepository(db)
 	billingService := billing.NewService(billingRepo)
-	billing.NewHandler(billingService).RegisterRoutes(router)
 
-	// ── Phase 7: Pluggable Payments ─────────────────────────────
 	paymentGateways := payment.GatewayRegistry{
 		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(
 			os.Getenv("MTN_MOMO_API_KEY"),
@@ -112,7 +95,49 @@ func main() {
 	}
 	paymentRepo := payment.NewPostgresRepository(db)
 	paymentService := payment.NewService(paymentRepo, paymentGateways)
-	payment.NewHandler(paymentService).RegisterRoutes(router)
+
+	// ── PUBLIC ROUTES (no auth required) ────────────────────
+	// User registration
+	user.NewHandler(userService).RegisterPublicRoutes(router)
+	// Login
+	auth.NewHandler(authService).RegisterRoutes(router)
+	// Payment webhooks (provider-signed, no JWT)
+	payment.NewHandler(paymentService).RegisterWebhookRoutes(router)
+
+	// ── PROTECTED ROUTES (JWT required) ─────────────────────
+	router.Group(func(r chi.Router) {
+		r.Use(appMiddleware.Authenticate)
+
+		// Users
+		user.NewHandler(userService).RegisterProtectedRoutes(r)
+
+		// Vendor management
+		vendor.NewHandler(vendorService).RegisterRoutes(r)
+
+		// Catalog
+		catalog.NewHandler(catalogService).RegisterRoutes(r)
+
+		// Inventory
+		inventory.NewHandler(inventoryService).RegisterRoutes(r)
+
+		// Orders
+		order.NewHandler(orderService).RegisterRoutes(r)
+
+		// Routing engine
+		routing.NewHandler(routingService).RegisterRoutes(r)
+
+		// Production
+		production.NewHandler(productionService).RegisterRoutes(r)
+
+		// POS
+		pos.NewHandler(posService).RegisterRoutes(r)
+
+		// Billing
+		billing.NewHandler(billingService).RegisterRoutes(r)
+
+		// Payments (protected)
+		payment.NewHandler(paymentService).RegisterProtectedRoutes(r)
+	})
 
 	// ── Start Server ─────────────────────────────────────────
 	port := os.Getenv("APP_PORT")

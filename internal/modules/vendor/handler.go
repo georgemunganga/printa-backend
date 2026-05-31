@@ -15,7 +15,7 @@ func NewHandler(service Service) *Handler {
 	return &Handler{service: service}
 }
 
-func (h *Handler) RegisterRoutes(router *chi.Mux) {
+func (h *Handler) RegisterRoutes(router chi.Router) {
 	router.Post("/vendor/onboard", h.onboardVendor)
 	router.Get("/vendor/profile", h.getVendor)
 }

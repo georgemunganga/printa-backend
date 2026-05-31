@@ -3,14 +3,11 @@ package auth
 import (
 	"context"
 	"errors"
-	"time"
 
-	"github.com/dgrijalva/jwt-go"
+	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"golang.org/x/crypto/bcrypt"
 )
-
-var jwtKey = []byte("your-secret-key")
 
 type service struct {
 	userRepo user.Repository
@@ -22,26 +19,23 @@ func NewService(userRepo user.Repository) Service {
 }
 
 func (s *service) Login(ctx context.Context, email, password string) (string, error) {
-	user, err := s.userRepo.GetUserByEmail(ctx, email)
+	u, err := s.userRepo.GetUserByEmail(ctx, email)
 	if err != nil {
-		return "", err
-	}
-
-	if err := bcrypt.CompareHashAndPassword([]byte(user.PasswordHash), []byte(password)); err != nil {
 		return "", errors.New("invalid credentials")
 	}
-
-	expirationTime := time.Now().Add(24 * time.Hour)
-	claims := &jwt.StandardClaims{
-		Subject:   user.ID.String(),
-		ExpiresAt: expirationTime.Unix(),
+	if !u.IsActive {
+		return "", errors.New("account is deactivated")
 	}
-
-	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	tokenString, err := token.SignedString(jwtKey)
+	if err := bcrypt.CompareHashAndPassword([]byte(u.PasswordHash), []byte(password)); err != nil {
+		return "", errors.New("invalid credentials")
+	}
+	token, err := appMiddleware.GenerateToken(u.ID.String(), u.Email, appMiddleware.Role(u.Role))
 	if err != nil {
 		return "", err
 	}
+	return token, nil
+}
 
-	return tokenString, nil
+func (s *service) RefreshToken(ctx context.Context, token string) (string, error) {
+	return "", errors.New("not implemented")
 }

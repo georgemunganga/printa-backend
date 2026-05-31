@@ -13,7 +13,7 @@ type Handler struct{ service Service }
 
 func NewHandler(service Service) *Handler { return &Handler{service: service} }
 
-func (h *Handler) RegisterRoutes(r *chi.Mux) {
+func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/routing", func(r chi.Router) {
 		// Order routing
 		r.Post("/route", h.routeOrder)                              // POST   /api/v1/routing/route
