@@ -76,7 +76,10 @@ func (h *Handler) verifyOTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) googleStart(w http.ResponseWriter, r *http.Request) {
-	authURL, err := h.service.GoogleAuthURL(r.Context(), r.URL.Query().Get("redirect_uri"))
+	authURL, err := h.service.GoogleAuthURL(r.Context(), OAuthStartRequest{
+		RedirectURI: r.URL.Query().Get("redirect_uri"),
+		Role:        r.URL.Query().Get("role"),
+	})
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return

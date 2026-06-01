@@ -64,7 +64,7 @@ func (s *service) RefreshToken(ctx context.Context, token string) (string, error
 	return "", errors.New("not implemented")
 }
 
-func (s *service) GoogleAuthURL(ctx context.Context, redirectURI string) (string, error) {
+func (s *service) GoogleAuthURL(ctx context.Context, req OAuthStartRequest) (string, error) {
 	if s.oauthRepo == nil {
 		return "", errors.New("OAuth repository is not configured")
 	}
@@ -73,7 +73,11 @@ func (s *service) GoogleAuthURL(ctx context.Context, redirectURI string) (string
 		return "", errors.New("Google OAuth is not configured")
 	}
 	callbackURL := googleCallbackURL()
-	frontendRedirect, err := resolveOAuthRedirectURI(redirectURI)
+	frontendRedirect, err := resolveOAuthRedirectURI(req.RedirectURI)
+	if err != nil {
+		return "", err
+	}
+	role, err := normalizeOAuthRole(req.Role)
 	if err != nil {
 		return "", err
 	}
@@ -81,7 +85,7 @@ func (s *service) GoogleAuthURL(ctx context.Context, redirectURI string) (string
 	if err != nil {
 		return "", err
 	}
-	if err := s.oauthRepo.CreateState(ctx, state, frontendRedirect, time.Now().Add(10*time.Minute)); err != nil {
+	if err := s.oauthRepo.CreateState(ctx, state, oauthState{RedirectURI: frontendRedirect, Role: role}, time.Now().Add(10*time.Minute)); err != nil {
 		return "", err
 	}
 
@@ -100,7 +104,7 @@ func (s *service) HandleGoogleCallback(ctx context.Context, code, state string) 
 	if strings.TrimSpace(code) == "" || strings.TrimSpace(state) == "" {
 		return nil, errors.New("code and state are required")
 	}
-	redirectURI, err := s.oauthRepo.ConsumeState(ctx, state)
+	oauthState, err := s.oauthRepo.ConsumeState(ctx, state)
 	if err != nil {
 		return nil, err
 	}
@@ -129,14 +133,20 @@ func (s *service) HandleGoogleCallback(ctx context.Context, code, state string) 
 				Email:     profile.Email,
 				FirstName: profile.GivenName,
 				LastName:  profile.FamilyName,
-				Role:      string(appMiddleware.RoleCustomer),
+				Role:      oauthState.Role,
 				IsActive:  true,
 			}
 			err = s.userRepo.CreateOAuthUser(ctx, u)
 		}
 		if err == nil {
+			u, err = s.applyOAuthRoleIntent(ctx, u, oauthState.Role)
+		}
+		if err == nil {
 			err = s.oauthRepo.LinkIdentity(ctx, "google", profile.Sub, profile.Email, u.ID.String())
 		}
+	}
+	if err == nil {
+		u, err = s.applyOAuthRoleIntent(ctx, u, oauthState.Role)
 	}
 	if err != nil {
 		return nil, err
@@ -149,7 +159,24 @@ func (s *service) HandleGoogleCallback(ctx context.Context, code, state string) 
 	if err != nil {
 		return nil, err
 	}
-	return &OAuthCallbackResponse{Token: token, TokenType: "Bearer", RedirectURI: redirectURI}, nil
+	return &OAuthCallbackResponse{Token: token, TokenType: "Bearer", RedirectURI: oauthState.RedirectURI}, nil
+}
+
+func (s *service) applyOAuthRoleIntent(ctx context.Context, u *user.User, role string) (*user.User, error) {
+	if role == "" || strings.EqualFold(u.Role, role) {
+		return u, nil
+	}
+	if role != string(appMiddleware.RoleVendor) {
+		return u, nil
+	}
+	if u.Role != string(appMiddleware.RoleCustomer) {
+		return u, nil
+	}
+	if err := s.userRepo.PromoteUserRole(ctx, u.ID.String(), role); err != nil {
+		return nil, err
+	}
+	u.Role = role
+	return u, nil
 }
 
 func (s *service) RequestOTP(ctx context.Context, req OTPRequest) (*OTPChallengeResponse, error) {
@@ -417,6 +444,19 @@ func resolveOAuthRedirectURI(requested string) (string, error) {
 		}
 	}
 	return "", errors.New("frontend redirect URI is not allowed")
+}
+
+func normalizeOAuthRole(role string) (string, error) {
+	role = strings.ToUpper(strings.TrimSpace(role))
+	if role == "" {
+		return string(appMiddleware.RoleCustomer), nil
+	}
+	switch appMiddleware.Role(role) {
+	case appMiddleware.RoleCustomer, appMiddleware.RoleVendor:
+		return role, nil
+	default:
+		return "", errors.New("unsupported OAuth role")
+	}
 }
 
 func splitCSV(value string) []string {

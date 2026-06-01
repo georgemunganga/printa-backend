@@ -3,6 +3,7 @@ package auth
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"errors"
 	"time"
 
@@ -10,8 +11,8 @@ import (
 )
 
 type oauthRepository interface {
-	CreateState(ctx context.Context, state, redirectURI string, expiresAt time.Time) error
-	ConsumeState(ctx context.Context, state string) (string, error)
+	CreateState(ctx context.Context, state string, payload oauthState, expiresAt time.Time) error
+	ConsumeState(ctx context.Context, state string) (*oauthState, error)
 	GetUserByIdentity(ctx context.Context, provider, providerSub string) (*user.User, error)
 	LinkIdentity(ctx context.Context, provider, providerSub, email, userID string) error
 }
@@ -22,45 +23,45 @@ func NewPostgresOAuthRepository(db *sql.DB) oauthRepository {
 	return &postgresOAuthRepository{db: db}
 }
 
-func (r *postgresOAuthRepository) CreateState(ctx context.Context, state, redirectURI string, expiresAt time.Time) error {
+func (r *postgresOAuthRepository) CreateState(ctx context.Context, state string, payload oauthState, expiresAt time.Time) error {
 	_, err := r.db.ExecContext(ctx, `
 		INSERT INTO auth_oauth_states (state, redirect_uri, expires_at)
-		VALUES ($1, $2, $3)`, state, redirectURI, expiresAt)
+		VALUES ($1, $2, $3)`, state, encodeOAuthState(payload), expiresAt)
 	return err
 }
 
-func (r *postgresOAuthRepository) ConsumeState(ctx context.Context, state string) (string, error) {
+func (r *postgresOAuthRepository) ConsumeState(ctx context.Context, state string) (*oauthState, error) {
 	tx, err := r.db.BeginTx(ctx, nil)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer tx.Rollback()
 
-	var redirectURI string
+	var rawPayload string
 	var expiresAt time.Time
 	var consumed sql.NullTime
 	err = tx.QueryRowContext(ctx, `
 		SELECT redirect_uri, expires_at, consumed_at
 		FROM auth_oauth_states
 		WHERE state = $1
-		FOR UPDATE`, state).Scan(&redirectURI, &expiresAt, &consumed)
+		FOR UPDATE`, state).Scan(&rawPayload, &expiresAt, &consumed)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	if consumed.Valid {
-		return "", errors.New("OAuth state already used")
+		return nil, errors.New("OAuth state already used")
 	}
 	if time.Now().After(expiresAt) {
-		return "", errors.New("OAuth state expired")
+		return nil, errors.New("OAuth state expired")
 	}
 	if _, err := tx.ExecContext(ctx, `
 		UPDATE auth_oauth_states SET consumed_at = NOW() WHERE state = $1`, state); err != nil {
-		return "", err
+		return nil, err
 	}
 	if err := tx.Commit(); err != nil {
-		return "", err
+		return nil, err
 	}
-	return redirectURI, nil
+	return decodeOAuthState(rawPayload), nil
 }
 
 func (r *postgresOAuthRepository) GetUserByIdentity(ctx context.Context, provider, providerSub string) (*user.User, error) {
@@ -92,4 +93,23 @@ func (r *postgresOAuthRepository) LinkIdentity(ctx context.Context, provider, pr
 		DO UPDATE SET email = EXCLUDED.email, updated_at = NOW()`,
 		provider, providerSub, email, userID)
 	return err
+}
+
+func encodeOAuthState(state oauthState) string {
+	b, err := json.Marshal(state)
+	if err != nil {
+		return state.RedirectURI
+	}
+	return string(b)
+}
+
+func decodeOAuthState(raw string) *oauthState {
+	var state oauthState
+	if err := json.Unmarshal([]byte(raw), &state); err == nil && state.RedirectURI != "" {
+		if state.Role == "" {
+			state.Role = "CUSTOMER"
+		}
+		return &state
+	}
+	return &oauthState{RedirectURI: raw, Role: "CUSTOMER"}
 }

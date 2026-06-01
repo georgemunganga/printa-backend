@@ -152,6 +152,15 @@ func (r *postgresRepository) UpdateUserRole(ctx context.Context, id, role string
 	return err
 }
 
+func (r *postgresRepository) PromoteUserRole(ctx context.Context, id, role string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE users
+		SET role = $1::user_role, updated_at = NOW()
+		WHERE id = $2 AND role = 'CUSTOMER'::user_role`,
+		role, id)
+	return err
+}
+
 func (r *postgresRepository) DeactivateUser(ctx context.Context, id string) error {
 	_, err := r.db.ExecContext(ctx,
 		`UPDATE users SET is_active = FALSE, updated_at = NOW() WHERE id = $1`, id)
