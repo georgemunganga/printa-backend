@@ -3,10 +3,12 @@ package comms
 import (
 	"bytes"
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"fmt"
 	"io"
 	"net/http"
+	"net/mail"
 	"net/smtp"
 	"net/url"
 	"os"
@@ -32,6 +34,7 @@ type EmailAdapter struct {
 	SMTPUser string
 	SMTPPass string
 	FromAddr string
+	FromName string
 	// SendGrid config (takes priority if APIKey is set)
 	SendGridAPIKey string
 }
@@ -43,6 +46,7 @@ func NewEmailAdapter() *EmailAdapter {
 		SMTPUser:       getEnv("SMTP_USER", ""),
 		SMTPPass:       getEnv("SMTP_PASS", ""),
 		FromAddr:       getEnv("SMTP_FROM", "noreply@printa.co.zm"),
+		FromName:       getEnv("SMTP_FROM_NAME", ""),
 		SendGridAPIKey: getEnv("SENDGRID_API_KEY", ""),
 	}
 }
@@ -91,19 +95,70 @@ func (a *EmailAdapter) sendViaSMTP(msg Message) (string, error) {
 	if a.SMTPUser == "" {
 		return "mock-email-ref", nil // sandbox mode — log only
 	}
-	auth := smtp.PlainAuth("", a.SMTPUser, a.SMTPPass, a.SMTPHost)
+	from := a.FromAddr
+	if a.FromName != "" {
+		from = (&mail.Address{Name: a.FromName, Address: a.FromAddr}).String()
+	}
+	message := a.buildSMTPMessage(msg, from)
+	if a.SMTPPort == "465" || a.SMTPPort == "456" {
+		return a.sendViaImplicitTLSSMTP(message, msg.Recipient)
+	}
+	err := smtp.SendMail(a.SMTPHost+":"+a.SMTPPort, a.smtpAuth(), a.FromAddr, []string{msg.Recipient}, []byte(message))
+	if err != nil {
+		return "", fmt.Errorf("smtp: %w", err)
+	}
+	return fmt.Sprintf("smtp-%d", time.Now().UnixNano()), nil
+}
+
+func (a *EmailAdapter) buildSMTPMessage(msg Message, from string) string {
 	body := msg.Body
 	if msg.HTMLBody != "" {
 		body = msg.HTMLBody
 	}
-	mime := "MIME-version: 1.0;\nContent-Type: text/html; charset=\"UTF-8\";\n\n"
-	message := "To: " + msg.Recipient + "\r\n" +
-		"From: " + a.FromAddr + "\r\n" +
+	mime := "MIME-version: 1.0;\r\nContent-Type: text/html; charset=\"UTF-8\";\r\n\r\n"
+	return "To: " + msg.Recipient + "\r\n" +
+		"From: " + from + "\r\n" +
 		"Subject: " + msg.Subject + "\r\n" +
 		mime + body
-	err := smtp.SendMail(a.SMTPHost+":"+a.SMTPPort, auth, a.FromAddr, []string{msg.Recipient}, []byte(message))
+}
+
+func (a *EmailAdapter) smtpAuth() smtp.Auth {
+	return smtp.PlainAuth("", a.SMTPUser, a.SMTPPass, a.SMTPHost)
+}
+
+func (a *EmailAdapter) sendViaImplicitTLSSMTP(message, recipient string) (string, error) {
+	addr := a.SMTPHost + ":" + a.SMTPPort
+	conn, err := tls.Dial("tcp", addr, &tls.Config{ServerName: a.SMTPHost, MinVersion: tls.VersionTLS12})
 	if err != nil {
-		return "", fmt.Errorf("smtp: %w", err)
+		return "", fmt.Errorf("smtp tls dial: %w", err)
+	}
+	defer conn.Close()
+
+	client, err := smtp.NewClient(conn, a.SMTPHost)
+	if err != nil {
+		return "", fmt.Errorf("smtp client: %w", err)
+	}
+	defer client.Quit()
+
+	if err := client.Auth(a.smtpAuth()); err != nil {
+		return "", fmt.Errorf("smtp auth: %w", err)
+	}
+	if err := client.Mail(a.FromAddr); err != nil {
+		return "", fmt.Errorf("smtp sender: %w", err)
+	}
+	if err := client.Rcpt(recipient); err != nil {
+		return "", fmt.Errorf("smtp recipient: %w", err)
+	}
+	writer, err := client.Data()
+	if err != nil {
+		return "", fmt.Errorf("smtp data: %w", err)
+	}
+	if _, err := writer.Write([]byte(message)); err != nil {
+		_ = writer.Close()
+		return "", fmt.Errorf("smtp write: %w", err)
+	}
+	if err := writer.Close(); err != nil {
+		return "", fmt.Errorf("smtp close: %w", err)
 	}
 	return fmt.Sprintf("smtp-%d", time.Now().UnixNano()), nil
 }
