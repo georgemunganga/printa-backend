@@ -339,9 +339,9 @@ func hashOTP(challengeID, code string) string {
 }
 
 func smsOTPConfigured() bool {
-	return os.Getenv("AFRICASTALKING_API_KEY") != "" ||
-		os.Getenv("AT_API_KEY") != "" ||
-		os.Getenv("TWILIO_SID") != ""
+	hasAfricasTalkingKey := os.Getenv("AFRICASTALKING_API_KEY") != "" || os.Getenv("AT_API_KEY") != ""
+	hasAfricasTalkingUsername := os.Getenv("AFRICASTALKING_USERNAME") != "" || os.Getenv("AT_USERNAME") != ""
+	return (hasAfricasTalkingKey && hasAfricasTalkingUsername) || os.Getenv("TWILIO_SID") != ""
 }
 
 type googleTokenResponse struct {

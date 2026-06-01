@@ -5,6 +5,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -179,7 +180,7 @@ type SMSAdapter struct {
 func NewSMSAdapter() *SMSAdapter {
 	return &SMSAdapter{
 		ATAPIKey:    getEnv("AT_API_KEY", ""),
-		ATUsername:  getEnv("AT_USERNAME", getEnv("AFRICASTALKING_USERNAME", "sandbox")),
+		ATUsername:  getEnv("AT_USERNAME", getEnv("AFRICASTALKING_USERNAME", "")),
 		ATSender:    getEnv("AT_SENDER_ID", getEnv("AFRICASTALKING_SENDER_ID", "Printa")),
 		TwilioSID:   getEnv("TWILIO_SID", ""),
 		TwilioToken: getEnv("TWILIO_TOKEN", ""),
@@ -205,6 +206,9 @@ func (a *SMSAdapter) sendViaAfricasTalking(ctx context.Context, msg Message) (st
 	apiKey := a.ATAPIKey
 	if apiKey == "" {
 		apiKey = getEnv("AFRICASTALKING_API_KEY", "")
+	}
+	if apiKey == "" || a.ATUsername == "" {
+		return "", errors.New("africas talking API key and username are required")
 	}
 	payload := url.Values{}
 	payload.Set("username", a.ATUsername)
