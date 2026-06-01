@@ -109,7 +109,10 @@ func decodeOAuthState(raw string) *oauthState {
 		if state.Role == "" {
 			state.Role = "CUSTOMER"
 		}
+		if state.Mode == "" {
+			state.Mode = "login"
+		}
 		return &state
 	}
-	return &oauthState{RedirectURI: raw, Role: "CUSTOMER"}
+	return &oauthState{RedirectURI: raw, Role: "CUSTOMER", Mode: "login"}
 }

@@ -63,11 +63,13 @@ type OAuthCallbackResponse struct {
 type OAuthStartRequest struct {
 	RedirectURI string `json:"redirect_uri"`
 	Role        string `json:"role,omitempty"`
+	Mode        string `json:"mode,omitempty"`
 }
 
 type oauthState struct {
 	RedirectURI string
 	Role        string
+	Mode        string
 }
 
 type otpChallenge struct {

@@ -81,11 +81,15 @@ func (s *service) GoogleAuthURL(ctx context.Context, req OAuthStartRequest) (str
 	if err != nil {
 		return "", err
 	}
+	mode, err := normalizeOAuthMode(req.Mode, req.Role)
+	if err != nil {
+		return "", err
+	}
 	state, err := randomToken(32)
 	if err != nil {
 		return "", err
 	}
-	if err := s.oauthRepo.CreateState(ctx, state, oauthState{RedirectURI: frontendRedirect, Role: role}, time.Now().Add(10*time.Minute)); err != nil {
+	if err := s.oauthRepo.CreateState(ctx, state, oauthState{RedirectURI: frontendRedirect, Role: role, Mode: mode}, time.Now().Add(10*time.Minute)); err != nil {
 		return "", err
 	}
 
@@ -128,6 +132,9 @@ func (s *service) HandleGoogleCallback(ctx context.Context, code, state string) 
 	if errors.Is(err, sql.ErrNoRows) {
 		u, err = s.userRepo.GetUserByEmail(ctx, profile.Email)
 		if errors.Is(err, sql.ErrNoRows) {
+			if oauthState.Mode != "signup" {
+				return &OAuthCallbackResponse{RedirectURI: oauthState.RedirectURI}, errors.New("account is not registered, please sign up")
+			}
 			u = &user.User{
 				ID:        uuid.New(),
 				Email:     profile.Email,
@@ -588,6 +595,21 @@ func normalizeOAuthRole(role, redirectURI string) (string, error) {
 		return "", errors.New("OAuth role is not allowed for redirect URI")
 	default:
 		return "", errors.New("unsupported OAuth role")
+	}
+}
+
+func normalizeOAuthMode(mode, requestedRole string) (string, error) {
+	mode = strings.ToLower(strings.TrimSpace(mode))
+	switch mode {
+	case "":
+		if strings.TrimSpace(requestedRole) != "" {
+			return "signup", nil
+		}
+		return "login", nil
+	case "login", "signup":
+		return mode, nil
+	default:
+		return "", errors.New("unsupported OAuth mode")
 	}
 }
 

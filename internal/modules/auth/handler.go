@@ -79,6 +79,7 @@ func (h *Handler) googleStart(w http.ResponseWriter, r *http.Request) {
 	authURL, err := h.service.GoogleAuthURL(r.Context(), OAuthStartRequest{
 		RedirectURI: r.URL.Query().Get("redirect_uri"),
 		Role:        r.URL.Query().Get("role"),
+		Mode:        r.URL.Query().Get("mode"),
 	})
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -94,6 +95,16 @@ func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.service.HandleGoogleCallback(r.Context(), r.URL.Query().Get("code"), r.URL.Query().Get("state"))
 	if err != nil {
+		if resp != nil && resp.RedirectURI != "" {
+			redirectURL, parseErr := url.Parse(resp.RedirectURI)
+			if parseErr == nil {
+				fragment := url.Values{}
+				fragment.Set("error", err.Error())
+				redirectURL.Fragment = fragment.Encode()
+				http.Redirect(w, r, redirectURL.String(), http.StatusFound)
+				return
+			}
+		}
 		respond(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}
