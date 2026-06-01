@@ -77,7 +77,7 @@ func (s *service) GoogleAuthURL(ctx context.Context, req OAuthStartRequest) (str
 	if err != nil {
 		return "", err
 	}
-	role, err := normalizeOAuthRole(req.Role)
+	role, err := normalizeOAuthRole(req.Role, frontendRedirect)
 	if err != nil {
 		return "", err
 	}
@@ -446,17 +446,39 @@ func resolveOAuthRedirectURI(requested string) (string, error) {
 	return "", errors.New("frontend redirect URI is not allowed")
 }
 
-func normalizeOAuthRole(role string) (string, error) {
+func normalizeOAuthRole(role, redirectURI string) (string, error) {
 	role = strings.ToUpper(strings.TrimSpace(role))
 	if role == "" {
 		return string(appMiddleware.RoleCustomer), nil
 	}
 	switch appMiddleware.Role(role) {
-	case appMiddleware.RoleCustomer, appMiddleware.RoleVendor:
+	case appMiddleware.RoleCustomer:
 		return role, nil
+	case appMiddleware.RoleVendor:
+		if isVendorOAuthRedirect(redirectURI) {
+			return role, nil
+		}
+		return "", errors.New("OAuth role is not allowed for redirect URI")
 	default:
 		return "", errors.New("unsupported OAuth role")
 	}
+}
+
+func isVendorOAuthRedirect(redirectURI string) bool {
+	allowed := splitCSV(os.Getenv("GOOGLE_OAUTH_VENDOR_REDIRECTS"))
+	if len(allowed) == 0 {
+		allowed = []string{
+			"https://vendor.printa.co.zm/auth/google/callback",
+			"http://localhost:5173/auth/google/callback",
+			"http://127.0.0.1:5173/auth/google/callback",
+		}
+	}
+	for _, candidate := range allowed {
+		if redirectURI == candidate {
+			return true
+		}
+	}
+	return false
 }
 
 func splitCSV(value string) []string {
