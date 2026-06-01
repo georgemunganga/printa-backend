@@ -179,7 +179,7 @@ type SMSAdapter struct {
 
 func NewSMSAdapter() *SMSAdapter {
 	return &SMSAdapter{
-		ATAPIKey:    getEnv("AT_API_KEY", ""),
+		ATAPIKey:    getEnv("AT_API_KEY", getEnv("AFRICASTALKING_API_KEY", "")),
 		ATUsername:  getEnv("AT_USERNAME", getEnv("AFRICASTALKING_USERNAME", "")),
 		ATSender:    getEnv("AT_SENDER_ID", getEnv("AFRICASTALKING_SENDER_ID", "")),
 		TwilioSID:   getEnv("TWILIO_SID", ""),
@@ -194,7 +194,7 @@ func (a *SMSAdapter) Send(ctx context.Context, msg Message) (string, error) {
 	if a.TwilioSID != "" {
 		return a.sendViaTwilio(ctx, msg)
 	}
-	if a.ATAPIKey != "" || getEnv("AFRICASTALKING_API_KEY", "") != "" {
+	if a.ATAPIKey != "" {
 		return a.sendViaAfricasTalking(ctx, msg)
 	}
 	// Sandbox mode — log only
@@ -203,11 +203,7 @@ func (a *SMSAdapter) Send(ctx context.Context, msg Message) (string, error) {
 }
 
 func (a *SMSAdapter) sendViaAfricasTalking(ctx context.Context, msg Message) (string, error) {
-	apiKey := a.ATAPIKey
-	if apiKey == "" {
-		apiKey = getEnv("AFRICASTALKING_API_KEY", "")
-	}
-	if apiKey == "" || a.ATUsername == "" {
+	if a.ATAPIKey == "" || a.ATUsername == "" {
 		return "", errors.New("africas talking API key and username are required")
 	}
 	payload := url.Values{}
@@ -220,7 +216,7 @@ func (a *SMSAdapter) sendViaAfricasTalking(ctx context.Context, msg Message) (st
 	req, _ := http.NewRequestWithContext(ctx, "POST",
 		"https://api.africastalking.com/version1/messaging",
 		strings.NewReader(payload.Encode()))
-	req.Header.Set("apiKey", apiKey)
+	req.Header.Set("apiKey", a.ATAPIKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
