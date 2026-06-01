@@ -181,7 +181,7 @@ func NewSMSAdapter() *SMSAdapter {
 	return &SMSAdapter{
 		ATAPIKey:    getEnv("AT_API_KEY", ""),
 		ATUsername:  getEnv("AT_USERNAME", getEnv("AFRICASTALKING_USERNAME", "")),
-		ATSender:    getEnv("AT_SENDER_ID", getEnv("AFRICASTALKING_SENDER_ID", "Printa")),
+		ATSender:    getEnv("AT_SENDER_ID", getEnv("AFRICASTALKING_SENDER_ID", "")),
 		TwilioSID:   getEnv("TWILIO_SID", ""),
 		TwilioToken: getEnv("TWILIO_TOKEN", ""),
 		TwilioFrom:  getEnv("TWILIO_FROM", ""),
