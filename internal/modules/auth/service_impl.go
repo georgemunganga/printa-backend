@@ -224,9 +224,6 @@ func (s *service) RequestOTP(ctx context.Context, req OTPRequest) (*OTPChallenge
 		if destination == "" {
 			return nil, errors.New("destination is required")
 		}
-		if req.Method == OTPMethodEmail && req.Password == "" {
-			return nil, errors.New("password is required for signup OTP")
-		}
 		deliveries = []otpDeliveryTarget{{Method: req.Method, Destination: destination}}
 	}
 
@@ -304,6 +301,12 @@ func (s *service) VerifyOTP(ctx context.Context, req OTPVerifyRequest) (*OTPVeri
 	var u *user.User
 	switch challenge.Purpose {
 	case OTPPurposeSignup:
+		if payload.Password == "" {
+			payload.Password, err = randomToken(32)
+			if err != nil {
+				return nil, err
+			}
+		}
 		u, err = s.userService.RegisterUser(ctx, payload.Email, payload.Password, payload.FirstName, payload.LastName, payload.Role)
 	case OTPPurposeLogin:
 		if payload.UserID != "" {
