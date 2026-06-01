@@ -8,6 +8,7 @@ import (
 	"io"
 	"net/http"
 	"net/smtp"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -123,8 +124,8 @@ type SMSAdapter struct {
 func NewSMSAdapter() *SMSAdapter {
 	return &SMSAdapter{
 		ATAPIKey:    getEnv("AT_API_KEY", ""),
-		ATUsername:  getEnv("AT_USERNAME", "sandbox"),
-		ATSender:    getEnv("AT_SENDER_ID", "Printa"),
+		ATUsername:  getEnv("AT_USERNAME", getEnv("AFRICASTALKING_USERNAME", "sandbox")),
+		ATSender:    getEnv("AT_SENDER_ID", getEnv("AFRICASTALKING_SENDER_ID", "Printa")),
 		TwilioSID:   getEnv("TWILIO_SID", ""),
 		TwilioToken: getEnv("TWILIO_TOKEN", ""),
 		TwilioFrom:  getEnv("TWILIO_FROM", ""),
@@ -137,7 +138,7 @@ func (a *SMSAdapter) Send(ctx context.Context, msg Message) (string, error) {
 	if a.TwilioSID != "" {
 		return a.sendViaTwilio(ctx, msg)
 	}
-	if a.ATAPIKey != "" {
+	if a.ATAPIKey != "" || getEnv("AFRICASTALKING_API_KEY", "") != "" {
 		return a.sendViaAfricasTalking(ctx, msg)
 	}
 	// Sandbox mode — log only
@@ -146,12 +147,21 @@ func (a *SMSAdapter) Send(ctx context.Context, msg Message) (string, error) {
 }
 
 func (a *SMSAdapter) sendViaAfricasTalking(ctx context.Context, msg Message) (string, error) {
-	payload := fmt.Sprintf("username=%s&to=%s&message=%s&from=%s",
-		a.ATUsername, msg.Recipient, msg.Body, a.ATSender)
+	apiKey := a.ATAPIKey
+	if apiKey == "" {
+		apiKey = getEnv("AFRICASTALKING_API_KEY", "")
+	}
+	payload := url.Values{}
+	payload.Set("username", a.ATUsername)
+	payload.Set("to", msg.Recipient)
+	payload.Set("message", msg.Body)
+	if a.ATSender != "" {
+		payload.Set("from", a.ATSender)
+	}
 	req, _ := http.NewRequestWithContext(ctx, "POST",
 		"https://api.africastalking.com/version1/messaging",
-		strings.NewReader(payload))
-	req.Header.Set("apiKey", a.ATAPIKey)
+		strings.NewReader(payload.Encode()))
+	req.Header.Set("apiKey", apiKey)
 	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
 	req.Header.Set("Accept", "application/json")
 	resp, err := http.DefaultClient.Do(req)
@@ -159,6 +169,10 @@ func (a *SMSAdapter) sendViaAfricasTalking(ctx context.Context, msg Message) (st
 		return "", fmt.Errorf("africas talking: %w", err)
 	}
 	defer resp.Body.Close()
+	if resp.StatusCode >= 400 {
+		b, _ := io.ReadAll(resp.Body)
+		return "", fmt.Errorf("africas talking error %d: %s", resp.StatusCode, string(b))
+	}
 	var result map[string]interface{}
 	json.NewDecoder(resp.Body).Decode(&result)
 	return fmt.Sprintf("at-%d", time.Now().UnixNano()), nil

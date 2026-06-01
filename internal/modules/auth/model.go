@@ -1,0 +1,60 @@
+package auth
+
+import "time"
+
+type OTPPurpose string
+
+const (
+	OTPPurposeLogin  OTPPurpose = "login"
+	OTPPurposeSignup OTPPurpose = "signup"
+)
+
+type OTPMethod string
+
+const (
+	OTPMethodEmail OTPMethod = "email"
+	OTPMethodPhone OTPMethod = "phone"
+)
+
+type OTPRequest struct {
+	Purpose   OTPPurpose `json:"purpose"`
+	Method    OTPMethod  `json:"method"`
+	Email     string     `json:"email,omitempty"`
+	Phone     string     `json:"phone,omitempty"`
+	Password  string     `json:"password,omitempty"`
+	FirstName string     `json:"first_name,omitempty"`
+	LastName  string     `json:"last_name,omitempty"`
+	Role      string     `json:"role,omitempty"`
+}
+
+type OTPVerifyRequest struct {
+	ChallengeID string `json:"challenge_id"`
+	Code        string `json:"code"`
+}
+
+type OTPChallengeResponse struct {
+	ChallengeID      string    `json:"challenge_id"`
+	Method           OTPMethod `json:"method"`
+	Destination      string    `json:"destination"`
+	ExpiresInSeconds int       `json:"expires_in_seconds"`
+	DeliveryStatus   string    `json:"delivery_status"`
+}
+
+type OTPVerifyResponse struct {
+	Token     string `json:"token"`
+	TokenType string `json:"token_type"`
+}
+
+type otpChallenge struct {
+	ID          string
+	Purpose     OTPPurpose
+	Method      OTPMethod
+	Destination string
+	CodeHash    string
+	Payload     []byte
+	Attempts    int
+	MaxAttempts int
+	ConsumedAt  *time.Time
+	ExpiresAt   time.Time
+	CreatedAt   time.Time
+}

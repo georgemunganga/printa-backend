@@ -52,6 +52,28 @@ func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (
 	return u, nil
 }
 
+func (r *postgresRepository) GetUserByPhone(ctx context.Context, phoneNumber string) (*User, error) {
+	u := &User{}
+	var phone sql.NullString
+	query := `
+		SELECT id, email, password_hash, first_name, last_name,
+		       COALESCE(role::text, 'CUSTOMER'), is_active, phone, created_at, updated_at
+		FROM users
+		WHERE phone = $1
+	`
+	err := r.db.QueryRowContext(ctx, query, phoneNumber).Scan(
+		&u.ID, &u.Email, &u.PasswordHash, &u.FirstName, &u.LastName,
+		&u.Role, &u.IsActive, &phone, &u.CreatedAt, &u.UpdatedAt,
+	)
+	if err != nil {
+		return nil, err
+	}
+	if phone.Valid {
+		u.Phone = phone.String
+	}
+	return u, nil
+}
+
 func (r *postgresRepository) GetUserByID(ctx context.Context, id string) (*User, error) {
 	u := &User{}
 	var phone sql.NullString

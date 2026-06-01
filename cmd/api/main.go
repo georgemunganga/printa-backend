@@ -55,7 +55,6 @@ func main() {
 	// ── Services & Repositories ──────────────────────────────
 	userRepo := user.NewPostgresRepository(db)
 	userService := user.NewService(userRepo)
-	authService := auth.NewService(userRepo)
 
 	vendorTierRepo := vendor.NewTierPostgresRepository(db)
 	vendorRepo := vendor.NewPostgresRepository(db)
@@ -96,6 +95,7 @@ func main() {
 		comms.NewWhatsAppAdapter(),
 	)
 	notificationService := notification.NewService(notificationRepo, comms.NewDispatcher(commsService))
+	authService := auth.NewService(userRepo, userService, auth.NewPostgresOTPRepository(db), commsService)
 
 	paymentGateways := payment.GatewayRegistry{
 		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(
