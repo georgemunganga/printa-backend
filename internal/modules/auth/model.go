@@ -45,6 +45,12 @@ type OTPVerifyResponse struct {
 	TokenType string `json:"token_type"`
 }
 
+type OAuthCallbackResponse struct {
+	Token       string `json:"token"`
+	TokenType   string `json:"token_type"`
+	RedirectURI string `json:"redirect_uri"`
+}
+
 type otpChallenge struct {
 	ID          string
 	Purpose     OTPPurpose

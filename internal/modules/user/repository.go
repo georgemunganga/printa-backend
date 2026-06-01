@@ -5,6 +5,7 @@ import "context"
 // Repository defines the interface for user data storage.
 type Repository interface {
 	CreateUser(ctx context.Context, user *User) error
+	CreateOAuthUser(ctx context.Context, user *User) error
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByPhone(ctx context.Context, phone string) (*User, error)
 	GetUserByID(ctx context.Context, id string) (*User, error)

@@ -95,7 +95,13 @@ func main() {
 		comms.NewWhatsAppAdapter(),
 	)
 	notificationService := notification.NewService(notificationRepo, comms.NewDispatcher(commsService))
-	authService := auth.NewService(userRepo, userService, auth.NewPostgresOTPRepository(db), commsService)
+	authService := auth.NewService(
+		userRepo,
+		userService,
+		auth.NewPostgresOTPRepository(db),
+		auth.NewPostgresOAuthRepository(db),
+		commsService,
+	)
 
 	paymentGateways := payment.GatewayRegistry{
 		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(

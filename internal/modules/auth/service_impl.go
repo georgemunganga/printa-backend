@@ -4,10 +4,14 @@ import (
 	"context"
 	"crypto/rand"
 	"crypto/sha256"
+	"database/sql"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
+	"net/http"
+	"net/url"
 	"os"
 	"strings"
 	"time"
@@ -23,15 +27,17 @@ type service struct {
 	userRepo    user.Repository
 	userService user.Service
 	otpRepo     otpRepository
+	oauthRepo   oauthRepository
 	comms       comms.Service
 }
 
 // NewService creates a new auth service.
-func NewService(userRepo user.Repository, userService user.Service, otpRepo otpRepository, commsService comms.Service) Service {
+func NewService(userRepo user.Repository, userService user.Service, otpRepo otpRepository, oauthRepo oauthRepository, commsService comms.Service) Service {
 	return &service{
 		userRepo:    userRepo,
 		userService: userService,
 		otpRepo:     otpRepo,
+		oauthRepo:   oauthRepo,
 		comms:       commsService,
 	}
 }
@@ -56,6 +62,94 @@ func (s *service) Login(ctx context.Context, email, password string) (string, er
 
 func (s *service) RefreshToken(ctx context.Context, token string) (string, error) {
 	return "", errors.New("not implemented")
+}
+
+func (s *service) GoogleAuthURL(ctx context.Context, redirectURI string) (string, error) {
+	if s.oauthRepo == nil {
+		return "", errors.New("OAuth repository is not configured")
+	}
+	clientID := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID"))
+	if clientID == "" {
+		return "", errors.New("Google OAuth is not configured")
+	}
+	callbackURL := googleCallbackURL()
+	frontendRedirect, err := resolveOAuthRedirectURI(redirectURI)
+	if err != nil {
+		return "", err
+	}
+	state, err := randomToken(32)
+	if err != nil {
+		return "", err
+	}
+	if err := s.oauthRepo.CreateState(ctx, state, frontendRedirect, time.Now().Add(10*time.Minute)); err != nil {
+		return "", err
+	}
+
+	q := url.Values{}
+	q.Set("client_id", clientID)
+	q.Set("redirect_uri", callbackURL)
+	q.Set("response_type", "code")
+	q.Set("scope", "openid email profile")
+	q.Set("state", state)
+	q.Set("access_type", "offline")
+	q.Set("prompt", "select_account")
+	return "https://accounts.google.com/o/oauth2/v2/auth?" + q.Encode(), nil
+}
+
+func (s *service) HandleGoogleCallback(ctx context.Context, code, state string) (*OAuthCallbackResponse, error) {
+	if strings.TrimSpace(code) == "" || strings.TrimSpace(state) == "" {
+		return nil, errors.New("code and state are required")
+	}
+	redirectURI, err := s.oauthRepo.ConsumeState(ctx, state)
+	if err != nil {
+		return nil, err
+	}
+
+	accessToken, err := exchangeGoogleCode(ctx, code)
+	if err != nil {
+		return nil, err
+	}
+	profile, err := fetchGoogleProfile(ctx, accessToken)
+	if err != nil {
+		return nil, err
+	}
+	if profile.Sub == "" || profile.Email == "" {
+		return nil, errors.New("Google profile is missing required identity fields")
+	}
+	if !profile.EmailVerified {
+		return nil, errors.New("Google email is not verified")
+	}
+
+	u, err := s.oauthRepo.GetUserByIdentity(ctx, "google", profile.Sub)
+	if errors.Is(err, sql.ErrNoRows) {
+		u, err = s.userRepo.GetUserByEmail(ctx, profile.Email)
+		if errors.Is(err, sql.ErrNoRows) {
+			u = &user.User{
+				ID:        uuid.New(),
+				Email:     profile.Email,
+				FirstName: profile.GivenName,
+				LastName:  profile.FamilyName,
+				Role:      string(appMiddleware.RoleCustomer),
+				IsActive:  true,
+			}
+			err = s.userRepo.CreateOAuthUser(ctx, u)
+		}
+		if err == nil {
+			err = s.oauthRepo.LinkIdentity(ctx, "google", profile.Sub, profile.Email, u.ID.String())
+		}
+	}
+	if err != nil {
+		return nil, err
+	}
+	if !u.IsActive {
+		return nil, errors.New("account is deactivated")
+	}
+
+	token, err := appMiddleware.GenerateToken(u.ID.String(), u.Email, appMiddleware.Role(u.Role))
+	if err != nil {
+		return nil, err
+	}
+	return &OAuthCallbackResponse{Token: token, TokenType: "Bearer", RedirectURI: redirectURI}, nil
 }
 
 func (s *service) RequestOTP(ctx context.Context, req OTPRequest) (*OTPChallengeResponse, error) {
@@ -221,4 +315,126 @@ func smsOTPConfigured() bool {
 	return os.Getenv("AFRICASTALKING_API_KEY") != "" ||
 		os.Getenv("AT_API_KEY") != "" ||
 		os.Getenv("TWILIO_SID") != ""
+}
+
+type googleTokenResponse struct {
+	AccessToken string `json:"access_token"`
+	TokenType   string `json:"token_type"`
+	ExpiresIn   int    `json:"expires_in"`
+	IDToken     string `json:"id_token"`
+	Error       string `json:"error"`
+	Description string `json:"error_description"`
+}
+
+type googleProfile struct {
+	Sub           string `json:"sub"`
+	Email         string `json:"email"`
+	EmailVerified bool   `json:"email_verified"`
+	GivenName     string `json:"given_name"`
+	FamilyName    string `json:"family_name"`
+	Name          string `json:"name"`
+}
+
+func exchangeGoogleCode(ctx context.Context, code string) (string, error) {
+	form := url.Values{}
+	form.Set("client_id", strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_ID")))
+	form.Set("client_secret", strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_CLIENT_SECRET")))
+	form.Set("redirect_uri", googleCallbackURL())
+	form.Set("grant_type", "authorization_code")
+	form.Set("code", code)
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://oauth2.googleapis.com/token", strings.NewReader(form.Encode()))
+	if err != nil {
+		return "", err
+	}
+	req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return "", fmt.Errorf("google token exchange failed: %s", string(body))
+	}
+	var parsed googleTokenResponse
+	if err := json.Unmarshal(body, &parsed); err != nil {
+		return "", err
+	}
+	if parsed.AccessToken == "" {
+		if parsed.Error != "" {
+			return "", fmt.Errorf("google token exchange failed: %s", parsed.Description)
+		}
+		return "", errors.New("google token exchange returned no access token")
+	}
+	return parsed.AccessToken, nil
+}
+
+func fetchGoogleProfile(ctx context.Context, accessToken string) (*googleProfile, error) {
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://www.googleapis.com/oauth2/v3/userinfo", nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Authorization", "Bearer "+accessToken)
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(resp.Body)
+	if resp.StatusCode >= 400 {
+		return nil, fmt.Errorf("google userinfo failed: %s", string(body))
+	}
+	var profile googleProfile
+	if err := json.Unmarshal(body, &profile); err != nil {
+		return nil, err
+	}
+	return &profile, nil
+}
+
+func googleCallbackURL() string {
+	if v := strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_REDIRECT_URL")); v != "" {
+		return v
+	}
+	return "https://api.printa.co.zm/api/v1/auth/google/callback"
+}
+
+func resolveOAuthRedirectURI(requested string) (string, error) {
+	requested = strings.TrimSpace(requested)
+	if requested == "" {
+		requested = strings.TrimSpace(os.Getenv("GOOGLE_OAUTH_FRONTEND_REDIRECT_URL"))
+	}
+	if requested == "" {
+		return "", errors.New("frontend redirect URI is not configured")
+	}
+	allowed := splitCSV(os.Getenv("GOOGLE_OAUTH_ALLOWED_REDIRECTS"))
+	if len(allowed) == 0 {
+		return requested, nil
+	}
+	for _, candidate := range allowed {
+		if requested == candidate {
+			return requested, nil
+		}
+	}
+	return "", errors.New("frontend redirect URI is not allowed")
+}
+
+func splitCSV(value string) []string {
+	parts := strings.Split(value, ",")
+	out := make([]string, 0, len(parts))
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part != "" {
+			out = append(out, part)
+		}
+	}
+	return out
+}
+
+func randomToken(byteCount int) (string, error) {
+	b := make([]byte, byteCount)
+	if _, err := rand.Read(b); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(b), nil
 }

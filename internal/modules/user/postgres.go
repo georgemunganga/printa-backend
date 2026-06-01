@@ -30,6 +30,24 @@ func (r *postgresRepository) CreateUser(ctx context.Context, u *User) error {
 	return err
 }
 
+func (r *postgresRepository) CreateOAuthUser(ctx context.Context, u *User) error {
+	query := `
+		INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active)
+		VALUES ($1, $2, $3, $4, $5, $6, $7)
+	`
+	role := u.Role
+	if role == "" {
+		role = "CUSTOMER"
+	}
+	passwordHash := u.PasswordHash
+	if passwordHash == "" {
+		passwordHash = "oauth:google"
+	}
+	_, err := r.db.ExecContext(ctx, query,
+		u.ID, u.Email, passwordHash, u.FirstName, u.LastName, role, true)
+	return err
+}
+
 func (r *postgresRepository) GetUserByEmail(ctx context.Context, email string) (*User, error) {
 	u := &User{}
 	var phone sql.NullString

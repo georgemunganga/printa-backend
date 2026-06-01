@@ -3,6 +3,7 @@ package auth
 import (
 	"encoding/json"
 	"net/http"
+	"net/url"
 
 	"github.com/go-chi/chi/v5"
 )
@@ -22,6 +23,8 @@ func (h *Handler) RegisterRoutes(router *chi.Mux) {
 	router.Post("/api/v1/auth/login", h.login)
 	router.Post("/api/v1/auth/otp/request", h.requestOTP)
 	router.Post("/api/v1/auth/otp/verify", h.verifyOTP)
+	router.Get("/api/v1/auth/google/start", h.googleStart)
+	router.Get("/api/v1/auth/google/callback", h.googleCallback)
 }
 
 func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
@@ -70,6 +73,37 @@ func (h *Handler) verifyOTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, resp)
+}
+
+func (h *Handler) googleStart(w http.ResponseWriter, r *http.Request) {
+	authURL, err := h.service.GoogleAuthURL(r.Context(), r.URL.Query().Get("redirect_uri"))
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	http.Redirect(w, r, authURL, http.StatusFound)
+}
+
+func (h *Handler) googleCallback(w http.ResponseWriter, r *http.Request) {
+	if oauthErr := r.URL.Query().Get("error"); oauthErr != "" {
+		respond(w, http.StatusUnauthorized, map[string]string{"error": oauthErr})
+		return
+	}
+	resp, err := h.service.HandleGoogleCallback(r.Context(), r.URL.Query().Get("code"), r.URL.Query().Get("state"))
+	if err != nil {
+		respond(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
+		return
+	}
+	redirectURL, err := url.Parse(resp.RedirectURI)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "invalid frontend redirect URI"})
+		return
+	}
+	fragment := url.Values{}
+	fragment.Set("token", resp.Token)
+	fragment.Set("token_type", resp.TokenType)
+	redirectURL.Fragment = fragment.Encode()
+	http.Redirect(w, r, redirectURL.String(), http.StatusFound)
 }
 
 func respond(w http.ResponseWriter, status int, body interface{}) {
