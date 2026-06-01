@@ -21,6 +21,7 @@ type OTPRequest struct {
 	Method    OTPMethod  `json:"method"`
 	Email     string     `json:"email,omitempty"`
 	Phone     string     `json:"phone,omitempty"`
+	UserID    string     `json:"user_id,omitempty"`
 	Password  string     `json:"password,omitempty"`
 	FirstName string     `json:"first_name,omitempty"`
 	LastName  string     `json:"last_name,omitempty"`
@@ -33,11 +34,19 @@ type OTPVerifyRequest struct {
 }
 
 type OTPChallengeResponse struct {
-	ChallengeID      string    `json:"challenge_id"`
-	Method           OTPMethod `json:"method"`
-	Destination      string    `json:"destination"`
-	ExpiresInSeconds int       `json:"expires_in_seconds"`
-	DeliveryStatus   string    `json:"delivery_status"`
+	ChallengeID      string        `json:"challenge_id"`
+	Method           OTPMethod     `json:"method"`
+	Destination      string        `json:"destination"`
+	ExpiresInSeconds int           `json:"expires_in_seconds"`
+	DeliveryStatus   string        `json:"delivery_status"`
+	Deliveries       []OTPDelivery `json:"deliveries,omitempty"`
+}
+
+type OTPDelivery struct {
+	Method      OTPMethod `json:"method"`
+	Destination string    `json:"destination"`
+	Status      string    `json:"status"`
+	Error       string    `json:"error,omitempty"`
 }
 
 type OTPVerifyResponse struct {

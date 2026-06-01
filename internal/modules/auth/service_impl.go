@@ -185,25 +185,49 @@ func (s *service) RequestOTP(ctx context.Context, req OTPRequest) (*OTPChallenge
 	if req.Purpose == "" {
 		req.Purpose = OTPPurposeLogin
 	}
-	if req.Method != OTPMethodEmail && req.Method != OTPMethodPhone {
+	if req.Purpose != OTPPurposeLogin && req.Purpose != OTPPurposeSignup {
+		return nil, errors.New("purpose must be login or signup")
+	}
+	if req.Method != "" && req.Method != OTPMethodEmail && req.Method != OTPMethodPhone {
 		return nil, errors.New("method must be email or phone")
 	}
 
-	destination := strings.TrimSpace(req.Email)
-	if req.Method == OTPMethodPhone {
-		destination = strings.TrimSpace(req.Phone)
-		if !smsOTPConfigured() {
-			return nil, errors.New("phone OTP is not configured")
+	destination := ""
+	var deliveries []otpDeliveryTarget
+	if req.Purpose == OTPPurposeLogin {
+		u, err := s.resolveOTPLoginUser(ctx, req)
+		if err != nil {
+			return nil, err
 		}
-		if req.Purpose == OTPPurposeSignup {
+		if !u.IsActive {
+			return nil, errors.New("account is deactivated")
+		}
+		req.UserID = u.ID.String()
+		deliveries = loginOTPDeliveryTargets(u)
+		if len(deliveries) == 0 {
+			return nil, errors.New("no OTP delivery channel is available for this account")
+		}
+		req.Method = deliveries[0].Method
+		destination = deliveries[0].Destination
+	} else {
+		if req.Method == "" {
+			req.Method = OTPMethodEmail
+		}
+		destination = strings.TrimSpace(req.Email)
+		if req.Method == OTPMethodPhone {
+			destination = strings.TrimSpace(req.Phone)
+			if !smsOTPConfigured() {
+				return nil, errors.New("phone OTP is not configured")
+			}
 			return nil, errors.New("phone signup OTP is not enabled")
 		}
-	}
-	if destination == "" {
-		return nil, errors.New("destination is required")
-	}
-	if req.Method == OTPMethodEmail && req.Purpose == OTPPurposeSignup && req.Password == "" {
-		return nil, errors.New("password is required for signup OTP")
+		if destination == "" {
+			return nil, errors.New("destination is required")
+		}
+		if req.Method == OTPMethodEmail && req.Password == "" {
+			return nil, errors.New("password is required for signup OTP")
+		}
+		deliveries = []otpDeliveryTarget{{Method: req.Method, Destination: destination}}
 	}
 
 	code, err := generateOTPCode()
@@ -230,8 +254,17 @@ func (s *service) RequestOTP(ctx context.Context, req OTPRequest) (*OTPChallenge
 		return nil, err
 	}
 
-	if err := s.sendOTP(ctx, req.Method, destination, code); err != nil {
-		return nil, err
+	deliveryResults := s.sendOTPToTargets(ctx, deliveries, code)
+	if !otpDelivered(deliveryResults) {
+		return nil, otpDeliveryError(deliveryResults)
+	}
+
+	status := "SENT"
+	if otpPartiallyDelivered(deliveryResults) {
+		status = "PARTIAL"
+	}
+	if req.Purpose == OTPPurposeSignup {
+		status = deliveryResults[0].Status
 	}
 
 	return &OTPChallengeResponse{
@@ -239,7 +272,8 @@ func (s *service) RequestOTP(ctx context.Context, req OTPRequest) (*OTPChallenge
 		Method:           req.Method,
 		Destination:      destination,
 		ExpiresInSeconds: 300,
-		DeliveryStatus:   "SENT",
+		DeliveryStatus:   status,
+		Deliveries:       deliveryResults,
 	}, nil
 }
 
@@ -272,7 +306,9 @@ func (s *service) VerifyOTP(ctx context.Context, req OTPVerifyRequest) (*OTPVeri
 	case OTPPurposeSignup:
 		u, err = s.userService.RegisterUser(ctx, payload.Email, payload.Password, payload.FirstName, payload.LastName, payload.Role)
 	case OTPPurposeLogin:
-		if challenge.Method == OTPMethodPhone {
+		if payload.UserID != "" {
+			u, err = s.userRepo.GetUserByID(ctx, payload.UserID)
+		} else if challenge.Method == OTPMethodPhone {
 			u, err = s.userRepo.GetUserByPhone(ctx, challenge.Destination)
 		} else {
 			u, err = s.userRepo.GetUserByEmail(ctx, challenge.Destination)
@@ -292,6 +328,94 @@ func (s *service) VerifyOTP(ctx context.Context, req OTPVerifyRequest) (*OTPVeri
 		return nil, err
 	}
 	return &OTPVerifyResponse{Token: token, TokenType: "Bearer"}, nil
+}
+
+type otpDeliveryTarget struct {
+	Method      OTPMethod
+	Destination string
+}
+
+func (s *service) resolveOTPLoginUser(ctx context.Context, req OTPRequest) (*user.User, error) {
+	email := strings.TrimSpace(req.Email)
+	phone := strings.TrimSpace(req.Phone)
+	if req.Method == OTPMethodEmail && email == "" {
+		return nil, errors.New("email is required")
+	}
+	if req.Method == OTPMethodPhone && phone == "" {
+		return nil, errors.New("phone is required")
+	}
+	if email != "" {
+		u, err := s.userRepo.GetUserByEmail(ctx, email)
+		if err == nil {
+			return u, nil
+		}
+		if phone == "" || !errors.Is(err, sql.ErrNoRows) {
+			return nil, errors.New("user not found")
+		}
+	}
+	if phone != "" {
+		u, err := s.userRepo.GetUserByPhone(ctx, phone)
+		if err == nil {
+			return u, nil
+		}
+		return nil, errors.New("user not found")
+	}
+	return nil, errors.New("email or phone is required")
+}
+
+func loginOTPDeliveryTargets(u *user.User) []otpDeliveryTarget {
+	var targets []otpDeliveryTarget
+	if strings.TrimSpace(u.Email) != "" {
+		targets = append(targets, otpDeliveryTarget{Method: OTPMethodEmail, Destination: strings.TrimSpace(u.Email)})
+	}
+	if strings.TrimSpace(u.Phone) != "" && smsOTPConfigured() {
+		targets = append(targets, otpDeliveryTarget{Method: OTPMethodPhone, Destination: strings.TrimSpace(u.Phone)})
+	}
+	return targets
+}
+
+func (s *service) sendOTPToTargets(ctx context.Context, targets []otpDeliveryTarget, code string) []OTPDelivery {
+	results := make([]OTPDelivery, 0, len(targets))
+	for _, target := range targets {
+		result := OTPDelivery{Method: target.Method, Destination: target.Destination, Status: "SENT"}
+		if err := s.sendOTP(ctx, target.Method, target.Destination, code); err != nil {
+			result.Status = "FAILED"
+			result.Error = err.Error()
+		}
+		results = append(results, result)
+	}
+	return results
+}
+
+func otpDelivered(deliveries []OTPDelivery) bool {
+	for _, delivery := range deliveries {
+		if delivery.Status == "SENT" {
+			return true
+		}
+	}
+	return false
+}
+
+func otpPartiallyDelivered(deliveries []OTPDelivery) bool {
+	hasSent := false
+	hasFailed := false
+	for _, delivery := range deliveries {
+		hasSent = hasSent || delivery.Status == "SENT"
+		hasFailed = hasFailed || delivery.Status == "FAILED"
+	}
+	return hasSent && hasFailed
+}
+
+func otpDeliveryError(deliveries []OTPDelivery) error {
+	if len(deliveries) == 0 {
+		return errors.New("no OTP delivery channel is available")
+	}
+	for _, delivery := range deliveries {
+		if delivery.Error != "" {
+			return errors.New(delivery.Error)
+		}
+	}
+	return errors.New("OTP delivery failed")
 }
 
 func (s *service) sendOTP(ctx context.Context, method OTPMethod, destination, code string) error {
