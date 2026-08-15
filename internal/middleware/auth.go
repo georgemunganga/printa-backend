@@ -3,6 +3,7 @@ package middleware
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"os"
 	"strings"
@@ -41,7 +42,13 @@ type Claims struct {
 
 // GenerateToken creates a signed JWT for the given user.
 func GenerateToken(userID, email string, role Role) (string, error) {
-	secret := os.Getenv("JWT_SECRET")
+	secret, err := jwtSecret()
+	if err != nil {
+		return "", err
+	}
+	if userID == "" || email == "" || !isValidRole(role) {
+		return "", errors.New("valid user ID, email, and role are required to generate a token")
+	}
 	expStr := os.Getenv("JWT_EXPIRATION")
 	if expStr == "" {
 		expStr = "24h"
@@ -62,23 +69,50 @@ func GenerateToken(userID, email string, role Role) (string, error) {
 		},
 	}
 	token := jwt.NewWithClaims(jwt.SigningMethodHS256, claims)
-	return token.SignedString([]byte(secret))
+	return token.SignedString(secret)
 }
 
 // ParseToken validates a JWT string and returns the claims.
 func ParseToken(tokenStr string) (*Claims, error) {
-	secret := os.Getenv("JWT_SECRET")
-	claims := &Claims{}
-	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
-		if _, ok := t.Method.(*jwt.SigningMethodHMAC); !ok {
-			return nil, jwt.ErrSignatureInvalid
-		}
-		return []byte(secret), nil
-	})
-	if err != nil || !token.Valid {
+	secret, err := jwtSecret()
+	if err != nil {
 		return nil, err
 	}
+
+	claims := &Claims{}
+	token, err := jwt.ParseWithClaims(tokenStr, claims, func(t *jwt.Token) (interface{}, error) {
+		if t.Method.Alg() != jwt.SigningMethodHS256.Alg() {
+			return nil, jwt.ErrSignatureInvalid
+		}
+		return secret, nil
+	}, jwt.WithValidMethods([]string{jwt.SigningMethodHS256.Alg()}))
+	if err != nil {
+		return nil, err
+	}
+	if !token.Valid {
+		return nil, errors.New("invalid token")
+	}
+	if claims.UserID == "" || claims.Email == "" || !isValidRole(claims.Role) {
+		return nil, errors.New("token has invalid claims")
+	}
 	return claims, nil
+}
+
+func jwtSecret() ([]byte, error) {
+	secret := strings.TrimSpace(os.Getenv("JWT_SECRET"))
+	if secret == "" {
+		return nil, errors.New("JWT_SECRET must be configured")
+	}
+	return []byte(secret), nil
+}
+
+func isValidRole(role Role) bool {
+	switch role {
+	case RoleAdmin, RoleVendor, RoleStaff, RoleCashier, RoleCustomer:
+		return true
+	default:
+		return false
+	}
 }
 
 // Authenticate is a chi-compatible middleware that validates the Bearer token.

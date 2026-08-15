@@ -109,14 +109,24 @@ paths:
     get:
       tags: [Users]
       summary: List users
+      description: Administrator capability.
+      x-required-roles: [ADMIN]
       responses:
         '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/users/me:
+    get:
+      tags: [Users]
+      summary: Get the authenticated user's profile
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
   /api/v1/users/{id}:
     parameters: [ { $ref: '#/components/parameters/ID' } ]
     get:
       tags: [Users]
       summary: Get a user by identifier
+      description: Available to the user themself or an administrator.
       responses:
         '200': { $ref: '#/components/responses/ObjectResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -224,6 +234,8 @@ paths:
     post:
       tags: [Vendors]
       summary: Create or complete a vendor onboarding profile
+      description: Vendor callers are bound to their authenticated user ID; administrators may provide `owner_id` when acting on behalf of a user.
+      x-required-roles: [VENDOR, ADMIN]
       requestBody:
         required: true
         content:
@@ -241,7 +253,8 @@ paths:
       parameters:
         - name: owner_id
           in: query
-          required: true
+          description: Required only for administrators retrieving another user's vendor profile. Ignored for vendor callers.
+          required: false
           schema: { type: string, format: uuid }
       responses:
         '200': { $ref: '#/components/responses/ObjectResponse' }
@@ -1454,7 +1467,7 @@ components:
         redirect_uri: { type: string, format: uri }
     VendorOnboard:
       type: object
-      required: [owner_id, business_name, tax_id]
+      required: [business_name, tax_id]
       properties:
         owner_id: { type: string, format: uuid }
         business_name: { type: string }
@@ -1499,14 +1512,14 @@ components:
         stock_quantity: { type: integer, minimum: 0 }
     StockUpdate:
       type: object
-      required: [stock_quantity]
+      required: [quantity]
       properties:
-        stock_quantity: { type: integer, minimum: 0 }
+        quantity: { type: integer, minimum: 0 }
     AvailabilityUpdate:
       type: object
-      required: [is_available]
+      required: [available]
       properties:
-        is_available: { type: boolean }
+        available: { type: boolean }
     CartItem:
       type: object
       required: [product_id, quantity]

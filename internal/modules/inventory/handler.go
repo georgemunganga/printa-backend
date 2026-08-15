@@ -5,20 +5,27 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/georgemunganga/printa-backend/internal/middleware"
+	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
 )
 
 // Handler exposes inventory HTTP endpoints.
-type Handler struct{ service Service }
+type Handler struct {
+	service       Service
+	vendorService vendor.Service
+}
 
-func NewHandler(service Service) *Handler { return &Handler{service: service} }
+func NewHandler(service Service, vendorService vendor.Service) *Handler {
+	return &Handler{service: service, vendorService: vendorService}
+}
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/inventory", func(r chi.Router) {
 		// Store endpoints
 		r.Post("/stores", h.createStore)
 		r.Get("/stores/{id}", h.getStore)
-		r.Get("/stores", h.listStores) // ?vendor_id=...
+		r.Get("/stores", h.listStores)
 
 		// Staff endpoints
 		r.Post("/stores/{store_id}/staff", h.addStaff)
@@ -44,9 +51,27 @@ func (h *Handler) createStore(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+
+	switch middleware.GetRole(r) {
+	case middleware.RoleAdmin:
+		if req.VendorID == "" {
+			respond(w, http.StatusBadRequest, map[string]string{"error": "vendor_id is required"})
+			return
+		}
+	case middleware.RoleVendor:
+		vendorID, ok := h.currentVendorID(w, r)
+		if !ok {
+			return
+		}
+		req.VendorID = vendorID
+	default:
+		respond(w, http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+		return
+	}
+
 	store, err := h.service.CreateStore(r.Context(), req)
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusCreated, store)
@@ -54,9 +79,8 @@ func (h *Handler) createStore(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getStore(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
-	store, err := h.service.GetStore(r.Context(), id)
-	if err != nil {
-		respond(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+	store, ok := h.requireStoreAccess(w, r, id, true)
+	if !ok {
 		return
 	}
 	respond(w, http.StatusOK, store)
@@ -64,10 +88,27 @@ func (h *Handler) getStore(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listStores(w http.ResponseWriter, r *http.Request) {
 	vendorID := r.URL.Query().Get("vendor_id")
-	if vendorID == "" {
-		respond(w, http.StatusBadRequest, map[string]string{"error": "vendor_id is required"})
+	switch middleware.GetRole(r) {
+	case middleware.RoleAdmin:
+		if vendorID == "" {
+			respond(w, http.StatusBadRequest, map[string]string{"error": "vendor_id is required"})
+			return
+		}
+	case middleware.RoleVendor:
+		currentVendorID, ok := h.currentVendorID(w, r)
+		if !ok {
+			return
+		}
+		if vendorID != "" && vendorID != currentVendorID {
+			respond(w, http.StatusForbidden, map[string]string{"error": "vendor scope does not match authenticated user"})
+			return
+		}
+		vendorID = currentVendorID
+	default:
+		respond(w, http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
 		return
 	}
+
 	stores, err := h.service.ListStores(r.Context(), vendorID)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -78,6 +119,10 @@ func (h *Handler) listStores(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) addStaff(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "store_id")
+	if _, ok := h.requireStoreAccess(w, r, storeID, false); !ok {
+		return
+	}
+
 	var body struct {
 		UserID string `json:"user_id"`
 		Role   string `json:"role"`
@@ -94,7 +139,7 @@ func (h *Handler) addStaff(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusCreated, staff)
@@ -102,6 +147,10 @@ func (h *Handler) addStaff(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listStaff(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "store_id")
+	if _, ok := h.requireStoreAccess(w, r, storeID, true); !ok {
+		return
+	}
+
 	staff, err := h.service.ListStaff(r.Context(), storeID)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -112,9 +161,13 @@ func (h *Handler) listStaff(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) removeStaff(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "store_id")
+	if _, ok := h.requireStoreAccess(w, r, storeID, false); !ok {
+		return
+	}
+
 	userID := chi.URLParam(r, "user_id")
 	if err := h.service.RemoveStaff(r.Context(), storeID, userID); err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
@@ -122,6 +175,10 @@ func (h *Handler) removeStaff(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) addProduct(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "store_id")
+	if _, ok := h.requireStoreAccess(w, r, storeID, false); !ok {
+		return
+	}
+
 	var req AddProductRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -136,7 +193,7 @@ func (h *Handler) addProduct(w http.ResponseWriter, r *http.Request) {
 			})
 			return
 		}
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusCreated, p)
@@ -144,6 +201,10 @@ func (h *Handler) addProduct(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listProducts(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "store_id")
+	if _, ok := h.requireStoreAccess(w, r, storeID, true); !ok {
+		return
+	}
+
 	products, err := h.service.ListProducts(r.Context(), storeID)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -154,6 +215,15 @@ func (h *Handler) listProducts(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) updateStock(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	product, err := h.service.GetProduct(r.Context(), id)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "product not found"})
+		return
+	}
+	if _, ok := h.requireStoreAccess(w, r, product.StoreID.String(), true); !ok {
+		return
+	}
+
 	var body struct {
 		Quantity int `json:"quantity"`
 	}
@@ -162,7 +232,7 @@ func (h *Handler) updateStock(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.UpdateStock(r.Context(), id, body.Quantity); err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusOK, map[string]string{"status": "stock updated"})
@@ -170,6 +240,15 @@ func (h *Handler) updateStock(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) setAvailability(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	product, err := h.service.GetProduct(r.Context(), id)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "product not found"})
+		return
+	}
+	if _, ok := h.requireStoreAccess(w, r, product.StoreID.String(), true); !ok {
+		return
+	}
+
 	var body struct {
 		Available bool `json:"available"`
 	}
@@ -178,14 +257,58 @@ func (h *Handler) setAvailability(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.SetAvailability(r.Context(), id, body.Available); err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusOK, map[string]string{"status": "availability updated"})
 }
 
+func (h *Handler) currentVendorID(w http.ResponseWriter, r *http.Request) (string, bool) {
+	v, err := h.vendorService.GetVendor(r.Context(), middleware.GetUserID(r))
+	if err != nil {
+		respond(w, http.StatusForbidden, map[string]string{"error": "authenticated vendor profile is required"})
+		return "", false
+	}
+	return v.ID.String(), true
+}
+
+func (h *Handler) requireStoreAccess(w http.ResponseWriter, r *http.Request, storeID string, allowStaff bool) (*Store, bool) {
+	store, err := h.service.GetStore(r.Context(), storeID)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "store not found"})
+		return nil, false
+	}
+
+	switch middleware.GetRole(r) {
+	case middleware.RoleAdmin:
+		return store, true
+	case middleware.RoleVendor:
+		vendorID, ok := h.currentVendorID(w, r)
+		if !ok {
+			return nil, false
+		}
+		if store.VendorID.String() == vendorID {
+			return store, true
+		}
+	case middleware.RoleStaff, middleware.RoleCashier:
+		if allowStaff {
+			staff, err := h.service.ListStaff(r.Context(), storeID)
+			if err == nil {
+				for _, member := range staff {
+					if member.UserID.String() == middleware.GetUserID(r) {
+						return store, true
+					}
+				}
+			}
+		}
+	}
+
+	respond(w, http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+	return nil, false
+}
+
 func respond(w http.ResponseWriter, status int, body interface{}) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
-	json.NewEncoder(w).Encode(body)
+	_ = json.NewEncoder(w).Encode(body)
 }

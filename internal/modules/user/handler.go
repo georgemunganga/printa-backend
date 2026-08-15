@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -31,6 +32,7 @@ func (h *Handler) RegisterPublicRoutes(router *chi.Mux) {
 
 // RegisterProtectedRoutes registers routes that require authentication.
 func (h *Handler) RegisterProtectedRoutes(router chi.Router) {
+	router.Get("/api/v1/users/me", h.getCurrentUser)
 	router.Get("/api/v1/users/{id}", h.getUser)
 	router.Get("/api/v1/users", h.listUsers)
 }
@@ -49,14 +51,28 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := h.service.RegisterUser(r.Context(), req.Email, req.Password, req.FirstName, req.LastName, req.Role)
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusCreated, u)
 }
 
+func (h *Handler) getCurrentUser(w http.ResponseWriter, r *http.Request) {
+	id := middleware.GetUserID(r)
+	u, err := h.service.GetUser(r.Context(), id)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+		return
+	}
+	respond(w, http.StatusOK, u)
+}
+
 func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	if middleware.GetRole(r) != middleware.RoleAdmin && middleware.GetUserID(r) != id {
+		respond(w, http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+		return
+	}
 	u, err := h.service.GetUser(r.Context(), id)
 	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "user not found"})
@@ -66,6 +82,10 @@ func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
+	if middleware.GetRole(r) != middleware.RoleAdmin {
+		respond(w, http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+		return
+	}
 	users, err := h.service.ListUsers(r.Context())
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

@@ -21,6 +21,7 @@ type Service interface {
 
 	// Product listing operations
 	AddProduct(ctx context.Context, req AddProductRequest) (*VendorStoreProduct, error)
+	GetProduct(ctx context.Context, id string) (*VendorStoreProduct, error)
 	ListProducts(ctx context.Context, storeID string) ([]*VendorStoreProduct, error)
 	UpdateStock(ctx context.Context, productID string, qty int) error
 	SetAvailability(ctx context.Context, productID string, available bool) error
@@ -155,6 +156,10 @@ func (s *service) AddProduct(ctx context.Context, req AddProductRequest) (*Vendo
 		return nil, err
 	}
 	return p, nil
+}
+
+func (s *service) GetProduct(ctx context.Context, id string) (*VendorStoreProduct, error) {
+	return s.productRepo.GetProductByID(ctx, id)
 }
 
 func (s *service) ListProducts(ctx context.Context, storeID string) ([]*VendorStoreProduct, error) {

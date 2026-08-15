@@ -28,6 +28,9 @@ func (s *service) RegisterUser(ctx context.Context, email, password, firstName, 
 	if role == "" {
 		role = "CUSTOMER"
 	}
+	if role != "CUSTOMER" && role != "VENDOR" {
+		return nil, errors.New("public registration only supports CUSTOMER or VENDOR roles")
+	}
 	u := &User{
 		ID:           uuid.New(),
 		Email:        email,

@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"net/http"
 
+	"github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -35,6 +36,14 @@ func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if middleware.GetRole(r) != middleware.RoleAdmin {
+		if middleware.GetRole(r) != middleware.RoleVendor {
+			http.Error(w, "insufficient permissions", http.StatusForbidden)
+			return
+		}
+		req.OwnerID = middleware.GetUserID(r)
+	}
+
 	vendor, err := h.service.OnboardVendor(r.Context(), req.OwnerID, req.BusinessName, req.TaxID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
@@ -48,6 +57,17 @@ func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) getVendor(w http.ResponseWriter, r *http.Request) {
 	ownerID := r.URL.Query().Get("owner_id")
+	if middleware.GetRole(r) != middleware.RoleAdmin {
+		if middleware.GetRole(r) != middleware.RoleVendor {
+			http.Error(w, "insufficient permissions", http.StatusForbidden)
+			return
+		}
+		ownerID = middleware.GetUserID(r)
+	}
+	if ownerID == "" {
+		http.Error(w, "owner_id is required", http.StatusBadRequest)
+		return
+	}
 
 	vendor, err := h.service.GetVendor(r.Context(), ownerID)
 	if err != nil {

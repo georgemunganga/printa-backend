@@ -149,7 +149,7 @@ func main() {
 		catalog.NewHandler(catalogService).RegisterRoutes(r)
 
 		// Inventory
-		inventory.NewHandler(inventoryService).RegisterRoutes(r)
+		inventory.NewHandler(inventoryService, vendorService).RegisterRoutes(r)
 
 		// Orders
 		order.NewHandler(orderService).RegisterRoutes(r)
