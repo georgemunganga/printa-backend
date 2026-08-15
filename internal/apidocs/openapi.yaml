@@ -1,0 +1,1724 @@
+openapi: 3.0.3
+info:
+  title: Printa Ecosystem API
+  version: 1.0.0
+  description: |
+    The Printa Ecosystem API supports vendor onboarding, stores, catalogues, orders,
+    routing, production, point of sale, billing, payments, notifications, and external
+    communications. All timestamps are RFC 3339 UTC strings and all identifiers are UUIDs
+    unless an endpoint documents otherwise.
+
+    Protected endpoints require an `Authorization: Bearer <JWT>` header. Roles are enforced
+    by the backend; an operation description identifies any additional role restriction.
+  contact:
+    name: Printa Engineering
+servers:
+  - url: /
+    description: Current environment
+security:
+  - bearerAuth: []
+tags:
+  - name: System
+  - name: Authentication
+  - name: Users
+  - name: Vendors
+  - name: Catalog
+  - name: Inventory
+  - name: Orders
+  - name: Routing
+  - name: Production
+  - name: POS
+  - name: Billing
+  - name: Payments
+  - name: Administration
+  - name: Notifications
+  - name: Communications
+paths:
+  /:
+    get:
+      tags: [System]
+      summary: Render API service status
+      security: []
+      responses:
+        '200':
+          description: HTML status page
+          content:
+            text/html:
+              schema:
+                type: string
+  /healthz:
+    get:
+      tags: [System]
+      summary: Check API and database health
+      security: []
+      responses:
+        '200':
+          description: API and database are available
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+        '503':
+          description: Database is unavailable
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Health'
+  /api/v1/docs:
+    get:
+      tags: [System]
+      summary: Open interactive API reference
+      security: []
+      responses:
+        '200':
+          description: Swagger UI HTML page
+          content:
+            text/html:
+              schema:
+                type: string
+  /api/v1/openapi.yaml:
+    get:
+      tags: [System]
+      summary: Download the OpenAPI contract
+      security: []
+      responses:
+        '200':
+          description: OpenAPI 3.0 YAML document
+          content:
+            application/yaml:
+              schema:
+                type: string
+
+  /api/v1/users/register:
+    post:
+      tags: [Users]
+      summary: Register a user account
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserRegistration'
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
+  /api/v1/users:
+    get:
+      tags: [Users]
+      summary: List users
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/users/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Users]
+      summary: Get a user by identifier
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/auth/login:
+    post:
+      tags: [Authentication]
+      summary: Authenticate with email and password
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LoginRequest'
+      responses:
+        '200':
+          description: JWT authentication result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/otp/request:
+    post:
+      tags: [Authentication]
+      summary: Request a one-time password challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OTPRequest'
+      responses:
+        '200':
+          description: OTP challenge created
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OTPChallenge'
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/otp/verify:
+    post:
+      tags: [Authentication]
+      summary: Verify a one-time password challenge
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/OTPVerify'
+      responses:
+        '200':
+          description: JWT authentication result
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthToken'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/auth/google/start:
+    get:
+      tags: [Authentication]
+      summary: Begin Google OAuth sign-in
+      security: []
+      parameters:
+        - $ref: '#/components/parameters/RedirectURI'
+        - $ref: '#/components/parameters/Role'
+        - $ref: '#/components/parameters/OAuthMode'
+      responses:
+        '302': { description: Redirect to Google authorization }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/auth/google/callback:
+    get:
+      tags: [Authentication]
+      summary: Complete Google OAuth sign-in
+      security: []
+      parameters:
+        - name: code
+          in: query
+          required: false
+          schema: { type: string }
+        - name: state
+          in: query
+          required: false
+          schema: { type: string }
+        - name: error
+          in: query
+          required: false
+          schema: { type: string }
+      responses:
+        '200':
+          description: OAuth token and redirect target
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OAuthCallback'
+        '400': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/vendor/onboard:
+    post:
+      tags: [Vendors]
+      summary: Create or complete a vendor onboarding profile
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorOnboard'
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/vendor/profile:
+    get:
+      tags: [Vendors]
+      summary: Get vendor profile
+      parameters:
+        - name: owner_id
+          in: query
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/catalog/products:
+    get:
+      tags: [Catalog]
+      summary: List platform print products
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: active
+          in: query
+          schema: { type: boolean, default: true }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Catalog]
+      summary: Create a platform print product
+      description: Administrator capability.
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogProduct' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/catalog/products/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Catalog]
+      summary: Get a platform print product
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Catalog]
+      summary: Update a platform print product
+      description: Administrator capability.
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CatalogProduct' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/inventory/stores:
+    get:
+      tags: [Inventory]
+      summary: List stores
+      parameters:
+        - name: vendor_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      summary: Create a vendor store
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Store' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/inventory/stores/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Inventory]
+      summary: Get a store by identifier
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/inventory/stores/{store_id}/staff:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Inventory]
+      summary: List store staff
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      summary: Assign a staff member to a store
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreStaffAssignment' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/inventory/stores/{store_id}/staff/{user_id}:
+    parameters:
+      - $ref: '#/components/parameters/StoreID'
+      - $ref: '#/components/parameters/UserID'
+    delete:
+      tags: [Inventory]
+      summary: Remove a staff member from a store
+      responses:
+        '204': { description: Staff member removed }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/inventory/stores/{store_id}/products:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Inventory]
+      summary: List products offered by a store
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Inventory]
+      summary: Add a platform product to a store catalogue
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreProduct' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/inventory/products/{id}/stock:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    patch:
+      tags: [Inventory]
+      summary: Update store product stock quantity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StockUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/inventory/products/{id}/availability:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    patch:
+      tags: [Inventory]
+      summary: Set store product availability
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AvailabilityUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/orders:
+    post:
+      tags: [Orders]
+      summary: Place an order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PlaceOrder' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/orders/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Orders]
+      summary: Get an order by identifier
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Orders]
+      summary: Cancel an order
+      responses:
+        '204': { description: Order cancelled }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/orders/number/{number}:
+    parameters: [ { $ref: '#/components/parameters/OrderNumber' } ]
+    get:
+      tags: [Orders]
+      summary: Get an order by human-readable order number
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/orders/{id}/status:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    patch:
+      tags: [Orders]
+      summary: Transition an order status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StatusUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/orders/store/{store_id}:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Orders]
+      summary: List orders for a store
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/orders/customer/{customer_id}:
+    parameters: [ { $ref: '#/components/parameters/CustomerID' } ]
+    get:
+      tags: [Orders]
+      summary: List orders for a customer
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/routing/route:
+    post:
+      tags: [Routing]
+      summary: Route an order to the best eligible store
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RouteOrder' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/routing/decisions/order/{order_id}:
+    parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+    get:
+      tags: [Routing]
+      summary: Get a routing decision for an order
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/routing/decisions/order/{order_id}/override:
+    parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+    post:
+      tags: [Routing]
+      summary: Manually override a routing decision
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RouteOverride' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/routing/decisions/store/{store_id}:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Routing]
+      summary: List routing decisions for a store
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/routing/rules:
+    get:
+      tags: [Routing]
+      summary: List routing rules
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Routing]
+      summary: Create a routing rule
+      description: Administrator capability.
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutingRule' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/routing/rules/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    put:
+      tags: [Routing]
+      summary: Update a routing rule
+      description: Administrator capability.
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/RoutingRule' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Routing]
+      summary: Delete a routing rule
+      description: Administrator capability.
+      x-required-roles: [ADMIN]
+      responses:
+        '204': { description: Routing rule deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/production/jobs:
+    post:
+      tags: [Production]
+      summary: Create a production job
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductionJob' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/production/jobs/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Production]
+      summary: Get a production job
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/production/jobs/order/{order_id}:
+    parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+    get:
+      tags: [Production]
+      summary: Get the production job for an order
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/production/stores/{store_id}/jobs:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Production]
+      summary: List production jobs for a store
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/production/stores/{store_id}/queue-depth:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Production]
+      summary: Get production queue depth for a store
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/production/staff/{user_id}/jobs:
+    parameters: [ { $ref: '#/components/parameters/UserID' } ]
+    get:
+      tags: [Production]
+      summary: List production jobs assigned to a staff user
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/production/jobs/{id}/status:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    patch:
+      tags: [Production]
+      summary: Update a production job status
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ProductionStatusUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/production/jobs/{id}/assign:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    patch:
+      tags: [Production]
+      summary: Assign a production job to staff
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AssignJob' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/pos/transactions:
+    post:
+      tags: [POS]
+      summary: Record a point-of-sale payment transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/POSTransaction' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/pos/transactions/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [POS]
+      summary: Get a POS transaction
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/pos/transactions/order/{order_id}:
+    parameters: [ { $ref: '#/components/parameters/OrderID' } ]
+    get:
+      tags: [POS]
+      summary: Get POS transactions for an order
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/pos/stores/{store_id}/transactions:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [POS]
+      summary: List POS transactions for a store
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/pos/transactions/{id}/refund:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    post:
+      tags: [POS]
+      summary: Refund a POS transaction
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Refund' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/billing/subscriptions:
+    post:
+      tags: [Billing]
+      summary: Create a vendor subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CreateSubscription' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/billing/subscriptions/vendor/{vendor_id}:
+    parameters: [ { $ref: '#/components/parameters/VendorID' } ]
+    get:
+      tags: [Billing]
+      summary: Get a vendor subscription
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/billing/subscriptions/vendor/{vendor_id}/tier:
+    parameters: [ { $ref: '#/components/parameters/VendorID' } ]
+    patch:
+      tags: [Billing]
+      summary: Change a vendor subscription tier
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ChangeTier' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/billing/subscriptions/vendor/{vendor_id}/cancel:
+    parameters: [ { $ref: '#/components/parameters/VendorID' } ]
+    post:
+      tags: [Billing]
+      summary: Cancel a vendor subscription
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CancelSubscription' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/billing/subscriptions/vendor/{vendor_id}/status:
+    parameters: [ { $ref: '#/components/parameters/VendorID' } ]
+    patch:
+      tags: [Billing]
+      summary: Update a vendor subscription status
+      description: Administrator capability.
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/SubscriptionStatus' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/billing/invoices/vendor/{vendor_id}/generate:
+    parameters: [ { $ref: '#/components/parameters/VendorID' } ]
+    post:
+      tags: [Billing]
+      summary: Generate a billing invoice
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/billing/invoices/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Billing]
+      summary: Get an invoice by identifier
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/billing/invoices/number/{number}:
+    parameters: [ { $ref: '#/components/parameters/InvoiceNumber' } ]
+    get:
+      tags: [Billing]
+      summary: Get an invoice by invoice number
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/billing/invoices/vendor/{vendor_id}:
+    parameters: [ { $ref: '#/components/parameters/VendorID' } ]
+    get:
+      tags: [Billing]
+      summary: List invoices for a vendor
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/billing/invoices/{id}/pay:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    post:
+      tags: [Billing]
+      summary: Mark an invoice as paid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/MarkInvoicePaid' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/billing/invoices/{id}/void:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    post:
+      tags: [Billing]
+      summary: Void an invoice
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/webhooks/mtn-momo:
+    post:
+      tags: [Payments]
+      summary: Receive an MTN MoMo payment callback
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentWebhook' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/webhooks/airtel-money:
+    post:
+      tags: [Payments]
+      summary: Receive an Airtel Money payment callback
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/PaymentWebhook' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+  /api/v1/payments:
+    post:
+      tags: [Payments]
+      summary: Initiate a payment
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/InitiatePayment' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/payments/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Payments]
+      summary: Get a payment transaction
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/payments/{id}/verify:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    post:
+      tags: [Payments]
+      summary: Verify a payment with its provider
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/payments/{id}/refund:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    post:
+      tags: [Payments]
+      summary: Refund a payment transaction
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/Refund' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/payments/reference/{ref_type}/{ref_id}:
+    parameters:
+      - name: ref_type
+        in: path
+        required: true
+        schema: { type: string, enum: [ORDER, INVOICE, SUBSCRIPTION] }
+      - name: ref_id
+        in: path
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      tags: [Payments]
+      summary: List payments by business reference
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/payments/vendor/{vendor_id}:
+    parameters: [ { $ref: '#/components/parameters/VendorID' } ]
+    get:
+      tags: [Payments]
+      summary: List payments for a vendor
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/admin/stats:
+    get:
+      tags: [Administration]
+      summary: Get platform dashboard statistics
+      x-required-roles: [ADMIN]
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/admin/users:
+    get:
+      tags: [Administration]
+      summary: List platform users
+      x-required-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - $ref: '#/components/parameters/Role'
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/admin/users/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Administration]
+      summary: Get a platform user
+      x-required-roles: [ADMIN]
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      tags: [Administration]
+      summary: Update a user role or active state
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/UpdateUser' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    delete:
+      tags: [Administration]
+      summary: Deactivate a user
+      x-required-roles: [ADMIN]
+      responses:
+        '204': { description: User deactivated }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/admin/vendors:
+    get:
+      tags: [Administration]
+      summary: List vendors
+      x-required-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema: { type: string }
+        - name: search
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/admin/vendors/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Administration]
+      summary: Get a vendor
+      x-required-roles: [ADMIN]
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/admin/vendors/{id}/status:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    patch:
+      tags: [Administration]
+      summary: Update vendor status
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/VendorStatus' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/admin/orders:
+    get:
+      tags: [Administration]
+      summary: List orders across the platform
+      x-required-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/admin/orders/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Administration]
+      summary: Get an order across the platform
+      x-required-roles: [ADMIN]
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/admin/subscriptions:
+    get:
+      tags: [Administration]
+      summary: List subscriptions across the platform
+      x-required-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: status
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/admin/audit-logs:
+    get:
+      tags: [Administration]
+      summary: List platform audit log entries
+      x-required-roles: [ADMIN]
+      parameters:
+        - $ref: '#/components/parameters/Page'
+        - $ref: '#/components/parameters/PageSize'
+        - name: admin_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: target_type
+          in: query
+          schema: { type: string }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/notifications:
+    get:
+      tags: [Notifications]
+      summary: List notifications for the authenticated user
+      parameters:
+        - name: status
+          in: query
+          schema: { type: string, enum: [UNREAD, READ, DISMISSED] }
+        - name: type
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+    post:
+      tags: [Notifications]
+      summary: Create a notification
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/notifications/unread-count:
+    get:
+      tags: [Notifications]
+      summary: Get unread notification count for the authenticated user
+      responses:
+        '200':
+          description: Unread count
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/UnreadCount' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/notifications/mark-all-read:
+    post:
+      tags: [Notifications]
+      summary: Mark all notifications as read for the authenticated user
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/notifications/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Notifications]
+      summary: Get a notification
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Notifications]
+      summary: Delete a notification for the authenticated user
+      responses:
+        '204': { description: Notification deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/notifications/{id}/read:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    post:
+      tags: [Notifications]
+      summary: Mark a notification as read
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/notifications/{id}/dismiss:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    post:
+      tags: [Notifications]
+      summary: Dismiss a notification
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /api/v1/notifications/bulk:
+    post:
+      tags: [Notifications]
+      summary: Create the same notification for multiple recipients
+      x-required-roles: [ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/NotificationBulkCreate' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
+  /api/v1/comms/send:
+    post:
+      tags: [Communications]
+      summary: Send an external communication
+      description: Available to authenticated vendor and administrator users.
+      x-required-roles: [VENDOR, ADMIN]
+      parameters: [ { $ref: '#/components/parameters/IdempotencyKey' } ]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/CommunicationSend' }
+      responses:
+        '200':
+          description: Communication delivery result
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/CommunicationResult' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/comms/logs:
+    get:
+      tags: [Communications]
+      summary: List communication delivery logs
+      x-required-roles: [ADMIN]
+      parameters:
+        - name: channel
+          in: query
+          schema: { type: string, enum: [EMAIL, SMS, PUSH, WHATSAPP] }
+        - name: recipient_id
+          in: query
+          schema: { type: string, format: uuid }
+        - name: status
+          in: query
+          schema: { type: string }
+        - $ref: '#/components/parameters/Limit'
+        - $ref: '#/components/parameters/Offset'
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/comms/logs/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    get:
+      tags: [Communications]
+      summary: Get a communication delivery log
+      x-required-roles: [ADMIN]
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+  parameters:
+    ID:
+      name: id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    StoreID:
+      name: store_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    VendorID:
+      name: vendor_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    UserID:
+      name: user_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    CustomerID:
+      name: customer_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderID:
+      name: order_id
+      in: path
+      required: true
+      schema: { type: string, format: uuid }
+    OrderNumber:
+      name: number
+      in: path
+      required: true
+      schema: { type: string }
+    InvoiceNumber:
+      name: number
+      in: path
+      required: true
+      schema: { type: string }
+    Page:
+      name: page
+      in: query
+      schema: { type: integer, minimum: 1, default: 1 }
+    PageSize:
+      name: page_size
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Limit:
+      name: limit
+      in: query
+      schema: { type: integer, minimum: 1, maximum: 100, default: 20 }
+    Offset:
+      name: offset
+      in: query
+      schema: { type: integer, minimum: 0, default: 0 }
+    Role:
+      name: role
+      in: query
+      schema: { type: string, enum: [ADMIN, VENDOR, STAFF, CASHIER, CUSTOMER] }
+    OAuthMode:
+      name: mode
+      in: query
+      schema: { type: string }
+    RedirectURI:
+      name: redirect_uri
+      in: query
+      schema: { type: string, format: uri }
+    IdempotencyKey:
+      name: Idempotency-Key
+      in: header
+      description: A caller-generated key used to safely retry an idempotent operation.
+      schema: { type: string, maxLength: 255 }
+  responses:
+    ObjectResponse:
+      description: Successful object response
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GenericObject' }
+    ArrayResponse:
+      description: Successful collection response
+      content:
+        application/json:
+          schema:
+            type: array
+            items: { $ref: '#/components/schemas/GenericObject' }
+    ObjectCreated:
+      description: Resource created
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/GenericObject' }
+    BadRequest:
+      description: Invalid request body, query parameter, or state transition
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Unauthorized:
+      description: Missing, invalid, expired, or inactive JWT
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Forbidden:
+      description: Authenticated caller lacks the required role or resource access
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    NotFound:
+      description: Requested resource does not exist
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+    Conflict:
+      description: A duplicate or conflicting resource state exists
+      content:
+        application/json:
+          schema: { $ref: '#/components/schemas/Error' }
+  schemas:
+    GenericObject:
+      type: object
+      additionalProperties: true
+    Error:
+      type: object
+      properties:
+        error: { type: string }
+      required: [error]
+    Health:
+      type: object
+      required: [service, status, database, environment, checked_at]
+      properties:
+        service: { type: string, example: printa-api }
+        status: { type: string, example: online }
+        database: { type: string, enum: [connected, unavailable] }
+        environment: { type: string, example: development }
+        checked_at: { type: string, format: date-time }
+    UserRegistration:
+      type: object
+      required: [email, password, first_name, last_name]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password, minLength: 8 }
+        first_name: { type: string }
+        last_name: { type: string }
+        role: { type: string, enum: [VENDOR, STAFF, CASHIER, CUSTOMER] }
+    LoginRequest:
+      type: object
+      required: [email, password]
+      properties:
+        email: { type: string, format: email }
+        password: { type: string, format: password }
+    AuthToken:
+      type: object
+      required: [token, token_type]
+      properties:
+        token: { type: string }
+        token_type: { type: string, example: Bearer }
+    OTPRequest:
+      type: object
+      required: [purpose, method]
+      properties:
+        purpose: { type: string, enum: [LOGIN, REGISTER, PASSWORD_RESET] }
+        method: { type: string, enum: [EMAIL, SMS] }
+        email: { type: string, format: email }
+        phone: { type: string }
+        user_id: { type: string, format: uuid }
+        password: { type: string, format: password }
+        first_name: { type: string }
+        last_name: { type: string }
+        role: { type: string }
+    OTPVerify:
+      type: object
+      required: [challenge_id, code]
+      properties:
+        challenge_id: { type: string, format: uuid }
+        code: { type: string, minLength: 4, maxLength: 12 }
+    OTPChallenge:
+      type: object
+      properties:
+        challenge_id: { type: string, format: uuid }
+        method: { type: string }
+        destination: { type: string }
+        expires_in_seconds: { type: integer }
+        delivery_status: { type: string }
+    OAuthCallback:
+      type: object
+      properties:
+        token: { type: string }
+        token_type: { type: string, example: Bearer }
+        redirect_uri: { type: string, format: uri }
+    VendorOnboard:
+      type: object
+      required: [owner_id, business_name, tax_id]
+      properties:
+        owner_id: { type: string, format: uuid }
+        business_name: { type: string }
+        tax_id: { type: string }
+    CatalogProduct:
+      type: object
+      required: [name, description, category, base_price, currency, sku]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        base_price: { type: number, format: double, minimum: 0 }
+        currency: { type: string, example: ZMW }
+        sku: { type: string }
+        image_url: { type: string, format: uri }
+    Store:
+      type: object
+      required: [vendor_id, name, description, address, city, country, phone, email]
+      properties:
+        vendor_id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        address: { type: string }
+        city: { type: string }
+        country: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+    StoreStaffAssignment:
+      type: object
+      required: [user_id]
+      properties:
+        user_id: { type: string, format: uuid }
+        role: { type: string, enum: [MANAGER, STAFF, CASHIER], default: STAFF }
+    StoreProduct:
+      type: object
+      required: [store_id, platform_product_id, vendor_price, currency, stock_quantity]
+      properties:
+        store_id: { type: string, format: uuid }
+        platform_product_id: { type: string, format: uuid }
+        vendor_price: { type: number, format: double, minimum: 0 }
+        currency: { type: string, example: ZMW }
+        stock_quantity: { type: integer, minimum: 0 }
+    StockUpdate:
+      type: object
+      required: [stock_quantity]
+      properties:
+        stock_quantity: { type: integer, minimum: 0 }
+    AvailabilityUpdate:
+      type: object
+      required: [is_available]
+      properties:
+        is_available: { type: boolean }
+    CartItem:
+      type: object
+      required: [product_id, quantity]
+      properties:
+        product_id: { type: string, format: uuid }
+        quantity: { type: integer, minimum: 1 }
+        unit_price: { type: number, format: double, minimum: 0 }
+        configuration:
+          type: object
+          additionalProperties: true
+    PlaceOrder:
+      type: object
+      required: [store_id, channel, items]
+      properties:
+        store_id: { type: string, format: uuid }
+        customer_id: { type: string, format: uuid }
+        channel: { type: string, enum: [ONLINE, POS] }
+        items:
+          type: array
+          minItems: 1
+          items: { $ref: '#/components/schemas/CartItem' }
+        notes: { type: string }
+        delivery_address:
+          type: object
+          additionalProperties: true
+        discount: { type: number, format: double, minimum: 0 }
+    StatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+    RouteOrder:
+      type: object
+      required: [order_id]
+      properties:
+        order_id: { type: string, format: uuid }
+    RouteOverride:
+      type: object
+      required: [store_id, reason]
+      properties:
+        store_id: { type: string, format: uuid }
+        reason: { type: string }
+    RoutingRule:
+      type: object
+      required: [name, rule_type, priority, conditions]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        rule_type: { type: string }
+        priority: { type: integer, minimum: 0 }
+        conditions:
+          type: object
+          additionalProperties: true
+        target_store_id: { type: string, format: uuid }
+    ProductionJob:
+      type: object
+      required: [order_id, store_id]
+      properties:
+        order_id: { type: string, format: uuid }
+        store_id: { type: string, format: uuid }
+        assigned_to: { type: string, format: uuid }
+        priority: { type: integer, default: 0 }
+        notes: { type: string }
+        due_at: { type: string, format: date-time }
+    ProductionStatusUpdate:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+        notes: { type: string }
+    AssignJob:
+      type: object
+      required: [user_id]
+      properties:
+        user_id: { type: string, format: uuid }
+    POSTransaction:
+      type: object
+      required: [order_id, store_id, amount, payment_method]
+      properties:
+        order_id: { type: string, format: uuid }
+        store_id: { type: string, format: uuid }
+        cashier_id: { type: string, format: uuid }
+        amount: { type: number, format: double, minimum: 0 }
+        payment_method: { type: string, enum: [CASH, MTN_MOMO, AIRTEL_MONEY, CARD] }
+        reference: { type: string }
+        change_given: { type: number, format: double, minimum: 0 }
+        notes: { type: string }
+    Refund:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string }
+    CreateSubscription:
+      type: object
+      required: [vendor_id, tier_id]
+      properties:
+        vendor_id: { type: string, format: uuid }
+        tier_id: { type: string, format: uuid }
+        billing_cycle: { type: string, enum: [MONTHLY, YEARLY], default: MONTHLY }
+        trial_days: { type: integer, minimum: 0 }
+    ChangeTier:
+      type: object
+      required: [tier_id]
+      properties:
+        tier_id: { type: string, format: uuid }
+        reason: { type: string }
+    CancelSubscription:
+      type: object
+      required: [reason]
+      properties:
+        reason: { type: string }
+    SubscriptionStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string }
+        reason: { type: string }
+    MarkInvoicePaid:
+      type: object
+      required: [payment_reference]
+      properties:
+        payment_reference: { type: string }
+        notes: { type: string }
+    InitiatePayment:
+      type: object
+      required: [provider, reference_type, reference_id, amount]
+      properties:
+        provider: { type: string, enum: [MTN_MOMO, AIRTEL_MONEY, CASH, CARD] }
+        reference_type: { type: string, enum: [ORDER, INVOICE, SUBSCRIPTION] }
+        reference_id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        amount: { type: number, format: double, minimum: 0 }
+        currency: { type: string, default: ZMW }
+        phone_number: { type: string }
+        description: { type: string }
+        idempotency_key: { type: string }
+    PaymentWebhook:
+      type: object
+      required: [provider, external_ref, status, amount, currency, raw_payload]
+      properties:
+        provider: { type: string }
+        external_ref: { type: string }
+        status: { type: string }
+        amount: { type: number, format: double }
+        currency: { type: string }
+        phone_number: { type: string }
+        raw_payload:
+          type: object
+          additionalProperties: true
+    UpdateUser:
+      type: object
+      properties:
+        role: { type: string, enum: [ADMIN, VENDOR, STAFF, CASHIER, CUSTOMER] }
+        is_active: { type: boolean }
+    VendorStatus:
+      type: object
+      required: [status]
+      properties:
+        status: { type: string, enum: [ACTIVE, SUSPENDED, BANNED] }
+    NotificationCreate:
+      type: object
+      required: [recipient_id, type, title, body]
+      properties:
+        recipient_id: { type: string, format: uuid }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        priority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+    NotificationBulkCreate:
+      type: object
+      required: [recipient_ids, type, title, body]
+      properties:
+        recipient_ids:
+          type: array
+          minItems: 1
+          items: { type: string, format: uuid }
+        type: { type: string }
+        title: { type: string }
+        body: { type: string }
+        priority: { type: string, enum: [LOW, NORMAL, HIGH, URGENT] }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+    UnreadCount:
+      type: object
+      required: [recipient_id, unread_count]
+      properties:
+        recipient_id: { type: string, format: uuid }
+        unread_count: { type: integer, minimum: 0 }
+    CommunicationSend:
+      type: object
+      required: [channel, recipient, body]
+      properties:
+        channel: { type: string, enum: [EMAIL, SMS, PUSH, WHATSAPP] }
+        recipient: { type: string }
+        recipient_id: { type: string, format: uuid }
+        subject: { type: string }
+        body: { type: string }
+        html_body: { type: string }
+        metadata:
+          type: object
+          additionalProperties: { type: string }
+        idempotency_key: { type: string }
+        template_id: { type: string }
+    CommunicationResult:
+      type: object
+      properties:
+        log_id: { type: string, format: uuid }
+        channel: { type: string }
+        status: { type: string }
+        provider_ref: { type: string }
+        error: { type: string }

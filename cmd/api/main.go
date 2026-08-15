@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/georgemunganga/printa-backend/internal/apidocs"
 	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/admin"
 	"github.com/georgemunganga/printa-backend/internal/modules/auth"
@@ -125,6 +126,8 @@ func main() {
 	// ── PUBLIC ROUTES (no auth required) ────────────────────
 	router.Get("/", statusPage(db))
 	router.Get("/healthz", healthCheck(db))
+	router.Get("/api/v1/openapi.yaml", apidocs.OpenAPIHandler)
+	router.Get("/api/v1/docs", apidocs.DocsHandler)
 	// User registration
 	user.NewHandler(userService).RegisterPublicRoutes(router)
 	// Login

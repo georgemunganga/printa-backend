@@ -1,196 +1,75 @@
-[![GitHub Workflow Status (branch)](https://img.shields.io/github/actions/workflow/status/golang-migrate/migrate/ci.yaml?branch=master)](https://github.com/golang-migrate/migrate/actions/workflows/ci.yaml?query=branch%3Amaster)
-[![GoDoc](https://pkg.go.dev/badge/github.com/golang-migrate/migrate)](https://pkg.go.dev/github.com/golang-migrate/migrate/v4)
-[![Coverage Status](https://img.shields.io/coveralls/github/golang-migrate/migrate/master.svg)](https://coveralls.io/github/golang-migrate/migrate?branch=master)
-[![packagecloud.io](https://img.shields.io/badge/deb-packagecloud.io-844fec.svg)](https://packagecloud.io/golang-migrate/migrate?filter=debs)
-[![Docker Pulls](https://img.shields.io/docker/pulls/migrate/migrate.svg)](https://hub.docker.com/r/migrate/migrate/)
-![Supported Go Versions](https://img.shields.io/badge/Go-1.21%2C%201.22-lightgrey.svg)
-[![GitHub Release](https://img.shields.io/github/release/golang-migrate/migrate.svg)](https://github.com/golang-migrate/migrate/releases)
-[![Go Report Card](https://goreportcard.com/badge/github.com/golang-migrate/migrate/v4)](https://goreportcard.com/report/github.com/golang-migrate/migrate/v4)
+# Printa Backend
 
-# migrate
+Printa Backend is the Go REST API for the Printa print-on-demand ecosystem. It is intentionally implemented as a **modular monolith**: each business domain owns its handler, service, repository, models, and database migrations while the application remains deployable as one coherent service. This keeps early delivery simple while preserving clean seams for future service extraction.
 
-__Database migrations written in Go. Use as [CLI](#cli-usage) or import as [library](#use-in-your-go-project).__
+## Domains
 
-* Migrate reads migrations from [sources](#migration-sources)
-   and applies them in correct order to a [database](#databases).
-* Drivers are "dumb", migrate glues everything together and makes sure the logic is bulletproof.
-   (Keeps the drivers lightweight, too.)
-* Database drivers don't assume things or try to correct user input. When in doubt, fail.
+| Domain | Responsibilities |
+|---|---|
+| Identity and users | User registration, JWT login, OTP verification, Google OAuth, roles, and active-state controls. |
+| Vendors and inventory | Vendor onboarding, stores, store staff, product availability, and stock. |
+| Catalogue and orders | Platform products, order creation, lifecycle transitions, POS orders, and VAT-aware totals. |
+| Routing and production | Store selection, routing rules, production jobs, assignment, and queue depth. |
+| POS, billing, and payments | Cashier transactions, refunds, subscriptions, invoices, MTN MoMo, Airtel Money, and provider webhooks. |
+| Administration and communication | Platform administration, audit logs, notifications, delivery logs, and Email/SMS/Push/WhatsApp dispatching. |
 
-Forked from [mattes/migrate](https://github.com/mattes/migrate)
+## Local development
 
-## Databases
-
-Database drivers run migrations. [Add a new database?](database/driver.go)
-
-* [PostgreSQL](database/postgres)
-* [PGX v4](database/pgx)
-* [PGX v5](database/pgx/v5)
-* [Redshift](database/redshift)
-* [Ql](database/ql)
-* [Cassandra / ScyllaDB](database/cassandra)
-* [SQLite](database/sqlite)
-* [SQLite3](database/sqlite3) ([todo #165](https://github.com/mattes/migrate/issues/165))
-* [SQLCipher](database/sqlcipher)
-* [MySQL / MariaDB](database/mysql)
-* [Neo4j](database/neo4j)
-* [MongoDB](database/mongodb)
-* [CrateDB](database/crate) ([todo #170](https://github.com/mattes/migrate/issues/170))
-* [Shell](database/shell) ([todo #171](https://github.com/mattes/migrate/issues/171))
-* [Google Cloud Spanner](database/spanner)
-* [CockroachDB](database/cockroachdb)
-* [YugabyteDB](database/yugabytedb)
-* [ClickHouse](database/clickhouse)
-* [Firebird](database/firebird)
-* [MS SQL Server](database/sqlserver)
-* [rqlite](database/rqlite)
-
-### Database URLs
-
-Database connection strings are specified via URLs. The URL format is driver dependent but generally has the form: `dbdriver://username:password@host:port/dbname?param1=true&param2=false`
-
-Any [reserved URL characters](https://en.wikipedia.org/wiki/Percent-encoding#Percent-encoding_reserved_characters) need to be escaped. Note, the `%` character also [needs to be escaped](https://en.wikipedia.org/wiki/Percent-encoding#Percent-encoding_the_percent_character)
-
-Explicitly, the following characters need to be escaped:
-`!`, `#`, `$`, `%`, `&`, `'`, `(`, `)`, `*`, `+`, `,`, `/`, `:`, `;`, `=`, `?`, `@`, `[`, `]`
-
-It's easiest to always run the URL parts of your DB connection URL (e.g. username, password, etc) through an URL encoder. See the example Python snippets below:
+The API requires Go 1.24 or newer and PostgreSQL. Copy the example environment file, then provide a local database URL and a development-only JWT secret.
 
 ```bash
-$ python3 -c 'import urllib.parse; print(urllib.parse.quote(input("String to encode: "), ""))'
-String to encode: FAKEpassword!#$%&'()*+,/:;=?@[]
-FAKEpassword%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D
-$ python2 -c 'import urllib; print urllib.quote(raw_input("String to encode: "), "")'
-String to encode: FAKEpassword!#$%&'()*+,/:;=?@[]
-FAKEpassword%21%23%24%25%26%27%28%29%2A%2B%2C%2F%3A%3B%3D%3F%40%5B%5D
-$
+cp .env.example .env
+# Set DATABASE_URL and JWT_SECRET in .env.
 ```
 
-## Migration Sources
-
-Source drivers read migrations from local or remote sources. [Add a new source?](source/driver.go)
-
-* [Filesystem](source/file) - read from filesystem
-* [io/fs](source/iofs) - read from a Go [io/fs](https://pkg.go.dev/io/fs#FS)
-* [Go-Bindata](source/go_bindata) - read from embedded binary data ([jteeuwen/go-bindata](https://github.com/jteeuwen/go-bindata))
-* [pkger](source/pkger) - read from embedded binary data ([markbates/pkger](https://github.com/markbates/pkger))
-* [GitHub](source/github) - read from remote GitHub repositories
-* [GitHub Enterprise](source/github_ee) - read from remote GitHub Enterprise repositories
-* [Bitbucket](source/bitbucket) - read from remote Bitbucket repositories
-* [Gitlab](source/gitlab) - read from remote Gitlab repositories
-* [AWS S3](source/aws_s3) - read from Amazon Web Services S3
-* [Google Cloud Storage](source/google_cloud_storage) - read from Google Cloud Platform Storage
-
-## CLI usage
-
-* Simple wrapper around this library.
-* Handles ctrl+c (SIGINT) gracefully.
-* No config search paths, no config files, no magic ENV var injections.
-
-__[CLI Documentation](cmd/migrate)__
-
-### Basic usage
+The standard local checks are deliberately exposed through a safe Makefile.
 
 ```bash
-$ migrate -source file://path/to/migrations -database postgres://localhost:5432/database up 2
+make check
+make run
 ```
 
-### Docker usage
+The API uses `APP_PORT`, which defaults to `8080`. A local health check is available at `GET /healthz`.
+
+## Database migrations
+
+Migrations are ordered SQL pairs in [`migrations/`](./migrations). Every migration must have matching `.up.sql` and `.down.sql` files with no version gaps. Verify this before committing changes:
 
 ```bash
-$ docker run -v {{ migration dir }}:/migrations --network host migrate/migrate
-    -path=/migrations/ -database postgres://localhost:5432/database up 2
+make verify-migrations
 ```
 
-## Use in your Go project
-
-* API is stable and frozen for this release (v3 & v4).
-* Uses [Go modules](https://golang.org/cmd/go/#hdr-Modules__module_versions__and_more) to manage dependencies.
-* To help prevent database corruptions, it supports graceful stops via `GracefulStop chan bool`.
-* Bring your own logger.
-* Uses `io.Reader` streams internally for low memory overhead.
-* Thread-safe and no goroutine leaks.
-
-__[Go Documentation](https://pkg.go.dev/github.com/golang-migrate/migrate/v4)__
-
-```go
-import (
-    "github.com/golang-migrate/migrate/v4"
-    _ "github.com/golang-migrate/migrate/v4/database/postgres"
-    _ "github.com/golang-migrate/migrate/v4/source/github"
-)
-
-func main() {
-    m, err := migrate.New(
-        "github://mattes:personal-access-token@mattes/migrate_test",
-        "postgres://localhost:5432/database?sslmode=enable")
-    m.Steps(2)
-}
-```
-
-Want to use an existing database client?
-
-```go
-import (
-    "database/sql"
-    _ "github.com/lib/pq"
-    "github.com/golang-migrate/migrate/v4"
-    "github.com/golang-migrate/migrate/v4/database/postgres"
-    _ "github.com/golang-migrate/migrate/v4/source/file"
-)
-
-func main() {
-    db, err := sql.Open("postgres", "postgres://localhost:5432/database?sslmode=enable")
-    driver, err := postgres.WithInstance(db, &postgres.Config{})
-    m, err := migrate.NewWithDatabaseInstance(
-        "file:///migrations",
-        "postgres", driver)
-    m.Up() // or m.Step(2) if you want to explicitly set the number of migrations to run
-}
-```
-
-## Getting started
-
-Go to [getting started](GETTING_STARTED.md)
-
-## Tutorials
-
-* [CockroachDB](database/cockroachdb/TUTORIAL.md)
-* [PostgreSQL](database/postgres/TUTORIAL.md)
-
-(more tutorials to come)
-
-## Migration files
-
-Each migration has an up and down migration. [Why?](FAQ.md#why-two-separate-files-up-and-down-for-a-migration)
+With the `migrate` CLI installed and `DATABASE_URL` set, apply migrations using:
 
 ```bash
-1481574547_create_users_table.up.sql
-1481574547_create_users_table.down.sql
+make migrate-up
 ```
 
-[Best practices: How to write migrations.](MIGRATIONS.md)
+Use `make migrate-down` only in a disposable development database.
 
-## Coming from another db migration tool?
+## API contract and documentation
 
-Check out [migradaptor](https://github.com/musinit/migradaptor/).
-*Note: migradaptor is not affiliated or supported by this project*
+The canonical OpenAPI contract is embedded in the binary at [`internal/apidocs/openapi.yaml`](./internal/apidocs/openapi.yaml). When the API is running it is available at:
 
-## Versions
+| Resource | Local URL |
+|---|---|
+| Interactive API reference | `http://localhost:8080/api/v1/docs` |
+| OpenAPI YAML contract | `http://localhost:8080/api/v1/openapi.yaml` |
+| Health check | `http://localhost:8080/healthz` |
 
-Version | Supported? | Import | Notes
---------|------------|--------|------
-**master** | :white_check_mark: | `import "github.com/golang-migrate/migrate/v4"` | New features and bug fixes arrive here first |
-**v4** | :white_check_mark: | `import "github.com/golang-migrate/migrate/v4"` | Used for stable releases |
-**v3** | :x: | `import "github.com/golang-migrate/migrate"` (with package manager) or `import "gopkg.in/golang-migrate/migrate.v3"` (not recommended) | **DO NOT USE** - No longer supported |
+The interactive reference supports bearer-token authorization for protected endpoints. Public endpoints include health checks, registration, password login, OTP flows, OAuth entry points, payment webhooks, and the documentation itself.
 
-## Development and Contributing
+## Quality expectations
 
-Yes, please! [`Makefile`](Makefile) is your friend,
-read the [development guide](CONTRIBUTING.md).
+Run `make check` before pushing backend changes. It formats source, runs static analysis and tests, validates migration pairs, verifies the OpenAPI asset, and builds the production binary. New endpoint work must update the OpenAPI contract in the same pull request so frontend teams can integrate against a stable documented interface.
 
-Also have a look at the [FAQ](FAQ.md).
+## Repository layout
 
----
-
-Looking for alternatives? [https://awesome-go.com/#database](https://awesome-go.com/#database).
+```text
+cmd/api/                  API composition root
+internal/apidocs/         Embedded OpenAPI contract and documentation handlers
+internal/middleware/      JWT authentication, RBAC, and shared HTTP middleware
+internal/modules/         Domain modules with handler, service, repository, and model layers
+migrations/               Ordered PostgreSQL migration pairs
+scripts/                  Deterministic local validation scripts
+```

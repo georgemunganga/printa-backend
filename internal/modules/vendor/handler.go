@@ -16,8 +16,10 @@ func NewHandler(service Service) *Handler {
 }
 
 func (h *Handler) RegisterRoutes(router chi.Router) {
-	router.Post("/vendor/onboard", h.onboardVendor)
-	router.Get("/vendor/profile", h.getVendor)
+	router.Route("/api/v1/vendor", func(r chi.Router) {
+		r.Post("/onboard", h.onboardVendor)
+		r.Get("/profile", h.getVendor)
+	})
 }
 
 func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
