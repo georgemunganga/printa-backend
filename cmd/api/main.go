@@ -132,8 +132,8 @@ func main() {
 	user.NewHandler(userService).RegisterPublicRoutes(router)
 	// Login
 	auth.NewHandler(authService).RegisterRoutes(router)
-	// Payment webhooks (provider-signed, no JWT)
-	payment.NewHandler(paymentService).RegisterWebhookRoutes(router)
+	// Payment webhooks (provider callback boundary, no JWT)
+	payment.NewHandler(paymentService, vendorService).RegisterWebhookRoutes(router)
 
 	// ── PROTECTED ROUTES (JWT required) ─────────────────────
 	router.Group(func(r chi.Router) {
@@ -158,13 +158,13 @@ func main() {
 		routing.NewHandler(routingService).RegisterRoutes(r)
 
 		// Production
-		production.NewHandler(productionService).RegisterRoutes(r)
+		production.NewHandler(productionService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// POS
-		pos.NewHandler(posService).RegisterRoutes(r)
+		pos.NewHandler(posService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// Billing
-		billing.NewHandler(billingService).RegisterRoutes(r)
+		billing.NewHandler(billingService, vendorService).RegisterRoutes(r)
 
 		// Admin platform management
 		admin.NewHandler(adminService).RegisterRoutes(r)
@@ -172,7 +172,7 @@ func main() {
 		comms.NewHandler(commsService).RegisterRoutes(r)
 
 		// Payments (protected)
-		payment.NewHandler(paymentService).RegisterProtectedRoutes(r)
+		payment.NewHandler(paymentService, vendorService).RegisterProtectedRoutes(r)
 	})
 
 	// ── Start Server ─────────────────────────────────────────

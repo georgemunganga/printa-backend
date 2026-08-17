@@ -5,8 +5,8 @@ import (
 	"net/http"
 	"strconv"
 
-	"github.com/go-chi/chi/v5"
 	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
+	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct{ svc Service }
@@ -77,6 +77,9 @@ func (h *Handler) listNotifications(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, err.Error())
 		return
+	}
+	if notifications == nil {
+		notifications = make([]*Notification, 0)
 	}
 	writeJSON(w, http.StatusOK, map[string]interface{}{
 		"notifications": notifications,

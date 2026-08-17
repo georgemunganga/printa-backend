@@ -33,6 +33,15 @@ func (s *service) CreateJob(ctx context.Context, req CreateJobRequest) (*Product
 		return nil, fmt.Errorf("store_id is required")
 	}
 
+	orderID, err := uuid.Parse(req.OrderID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid order_id: %w", err)
+	}
+	storeID, err := uuid.Parse(req.StoreID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid store_id: %w", err)
+	}
+
 	priority := req.Priority
 	if priority <= 0 {
 		priority = 5 // NORMAL
@@ -40,8 +49,8 @@ func (s *service) CreateJob(ctx context.Context, req CreateJobRequest) (*Product
 
 	job := &ProductionJob{
 		ID:       uuid.New(),
-		OrderID:  uuid.MustParse(req.OrderID),
-		StoreID:  uuid.MustParse(req.StoreID),
+		OrderID:  orderID,
+		StoreID:  storeID,
 		Status:   JobQueued,
 		Priority: priority,
 		Notes:    req.Notes,

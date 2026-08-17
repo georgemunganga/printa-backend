@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"strings"
 
 	"github.com/google/uuid"
@@ -161,8 +162,14 @@ func (s *service) Verify(ctx context.Context, id string) (*PaymentTransaction, e
 
 func (s *service) HandleWebhook(ctx context.Context, payload WebhookPayload) (*PaymentTransaction, error) {
 	provider := Provider(strings.ToUpper(payload.Provider))
+	if provider != ProviderMTNMomo && provider != ProviderAirtel {
+		return nil, fmt.Errorf("unsupported webhook provider: %s", provider)
+	}
+	if payload.ExternalRef == "" || payload.Status == "" {
+		return nil, fmt.Errorf("external_ref and status are required")
+	}
 
-	// Find the transaction by provider reference
+	// Find the transaction by provider reference.
 	tx, err := s.repo.GetByProviderRef(ctx, provider, payload.ExternalRef)
 	if err != nil {
 		if err == sql.ErrNoRows {
@@ -170,14 +177,25 @@ func (s *service) HandleWebhook(ctx context.Context, payload WebhookPayload) (*P
 		}
 		return nil, err
 	}
+	if payload.Amount > 0 && math.Abs(tx.Amount-payload.Amount) > 0.005 {
+		return nil, fmt.Errorf("webhook amount does not match payment transaction")
+	}
+	if payload.Currency != "" && !strings.EqualFold(tx.Currency, payload.Currency) {
+		return nil, fmt.Errorf("webhook currency does not match payment transaction")
+	}
 
-	// Record the raw webhook payload
-	_ = s.repo.RecordWebhook(ctx, tx.ID.String(), payload.RawPayload)
+	// Persist received data for auditability even when the status is already terminal.
+	if err := s.repo.RecordWebhook(ctx, tx.ID.String(), payload.RawPayload); err != nil {
+		return nil, err
+	}
+	if tx.Status == TxCompleted || tx.Status == TxFailed || tx.Status == TxRefunded || tx.Status == TxCancelled {
+		return tx, nil
+	}
 
-	// Normalise and update status
 	internalStatus := NormaliseStatus(provider, payload.Status)
-	_ = s.repo.UpdateStatus(ctx, tx.ID.String(), internalStatus, payload.Status, "")
-
+	if err := s.repo.UpdateStatus(ctx, tx.ID.String(), internalStatus, payload.Status, ""); err != nil {
+		return nil, err
+	}
 	return s.repo.GetByID(ctx, tx.ID.String())
 }
 
