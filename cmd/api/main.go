@@ -36,6 +36,9 @@ func main() {
 	if err := godotenv.Load(); err != nil {
 		log.Println("No .env file found, using environment variables")
 	}
+	if err := validateStartupConfig(); err != nil {
+		log.Fatal("Invalid configuration:", err)
+	}
 
 	db, err := sql.Open("postgres", os.Getenv("DATABASE_URL"))
 	if err != nil {
@@ -53,6 +56,7 @@ func main() {
 	router.Use(chiMiddleware.Logger)
 	router.Use(chiMiddleware.Recoverer)
 	router.Use(chiMiddleware.RequestID)
+	router.Use(requestCorrelationMiddleware)
 	router.Use(corsMiddleware())
 
 	// ── Services & Repositories ──────────────────────────────
@@ -125,7 +129,9 @@ func main() {
 
 	// ── PUBLIC ROUTES (no auth required) ────────────────────
 	router.Get("/", statusPage(db))
-	router.Get("/healthz", healthCheck(db))
+	router.Get("/livez", livenessCheck())
+	router.Get("/readyz", readinessCheck(db))
+	router.Get("/healthz", readinessCheck(db))
 	router.Get("/api/v1/openapi.yaml", apidocs.OpenAPIHandler)
 	router.Get("/api/v1/docs", apidocs.DocsHandler)
 	// User registration
@@ -231,7 +237,14 @@ func statusPage(db *sql.DB) http.HandlerFunc {
 	}
 }
 
-func healthCheck(db *sql.DB) http.HandlerFunc {
+func livenessCheck() http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]string{"service": "printa-api", "status": "live"})
+	}
+}
+
+func readinessCheck(db *sql.DB) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		status := http.StatusOK
 		dbStatus := "connected"
@@ -244,7 +257,7 @@ func healthCheck(db *sql.DB) http.HandlerFunc {
 		w.WriteHeader(status)
 		_ = json.NewEncoder(w).Encode(map[string]string{
 			"service":     "printa-api",
-			"status":      "online",
+			"status":      "ready",
 			"database":    dbStatus,
 			"environment": getenvDefault("APP_ENV", "production"),
 			"checked_at":  time.Now().UTC().Format(time.RFC3339),
@@ -281,6 +294,8 @@ func configuredCORSOrigins() map[string]bool {
 		"https://printa.co.zm",
 		"http://localhost:5173",
 		"http://127.0.0.1:5173",
+		"http://localhost:5174",
+		"http://127.0.0.1:5174",
 	}
 	origins := make(map[string]bool, len(defaults))
 	for _, origin := range defaults {
@@ -302,6 +317,25 @@ func splitCSV(value string) []string {
 		}
 	}
 	return out
+}
+
+func requestCorrelationMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if requestID := chiMiddleware.GetReqID(r.Context()); requestID != "" {
+			w.Header().Set("X-Request-ID", requestID)
+		}
+		next.ServeHTTP(w, r)
+	})
+}
+
+func validateStartupConfig() error {
+	if strings.TrimSpace(os.Getenv("DATABASE_URL")) == "" {
+		return fmt.Errorf("DATABASE_URL is required")
+	}
+	if getenvDefault("APP_ENV", "development") == "production" && strings.TrimSpace(os.Getenv("JWT_SECRET")) == "" {
+		return fmt.Errorf("JWT_SECRET is required in production")
+	}
+	return nil
 }
 
 func getenvDefault(key, fallback string) string {
