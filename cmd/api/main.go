@@ -13,6 +13,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/apidocs"
 	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/admin"
+	"github.com/georgemunganga/printa-backend/internal/modules/assets"
 	"github.com/georgemunganga/printa-backend/internal/modules/auth"
 	"github.com/georgemunganga/printa-backend/internal/modules/billing"
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
@@ -127,6 +128,11 @@ func main() {
 	paymentRepo := payment.NewPostgresRepository(db)
 	paymentService := payment.NewService(paymentRepo, paymentGateways)
 
+	assetHandler, err := assets.NewHandler(db)
+	if err != nil {
+		log.Fatal("Asset storage configuration failed:", err)
+	}
+
 	// ── PUBLIC ROUTES (no auth required) ────────────────────
 	router.Get("/", statusPage(db))
 	router.Get("/livez", livenessCheck())
@@ -161,6 +167,9 @@ func main() {
 
 		// Orders
 		order.NewHandler(orderService).RegisterRoutes(r)
+
+		// Customer-owned design assets
+		assetHandler.RegisterRoutes(r)
 
 		// Routing engine
 		routing.NewHandler(routingService).RegisterRoutes(r)
