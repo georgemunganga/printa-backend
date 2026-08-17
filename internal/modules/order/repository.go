@@ -23,5 +23,5 @@ type Repository interface {
 	UpdateStatus(ctx context.Context, id string, status OrderStatus) error
 
 	// GetProductPrice fetches the current vendor price and availability for a store product.
-	GetProductPrice(ctx context.Context, vendorStoreProductID string) (price float64, available bool, err error)
+	GetProductPrice(ctx context.Context, storeID, vendorStoreProductID string) (price float64, available bool, err error)
 }

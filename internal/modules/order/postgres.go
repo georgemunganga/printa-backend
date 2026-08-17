@@ -104,12 +104,12 @@ func (r *postgresRepo) UpdateStatus(ctx context.Context, id string, status Order
 	return err
 }
 
-func (r *postgresRepo) GetProductPrice(ctx context.Context, vendorStoreProductID string) (float64, bool, error) {
+func (r *postgresRepo) GetProductPrice(ctx context.Context, storeID, vendorStoreProductID string) (float64, bool, error) {
 	var price float64
 	var available bool
 	err := r.db.QueryRowContext(ctx,
-		`SELECT vendor_price, is_available FROM vendor_store_products WHERE id=$1`,
-		vendorStoreProductID).Scan(&price, &available)
+		`SELECT vendor_price, is_available FROM vendor_store_products WHERE id=$1 AND store_id=$2`,
+		vendorStoreProductID, storeID).Scan(&price, &available)
 	return price, available, err
 }
 

@@ -78,7 +78,7 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 		if ci.Quantity <= 0 {
 			return nil, fmt.Errorf("quantity must be > 0 for product %s", ci.VendorStoreProductID)
 		}
-		price, available, err := s.repo.GetProductPrice(ctx, ci.VendorStoreProductID)
+		price, available, err := s.repo.GetProductPrice(ctx, req.StoreID, ci.VendorStoreProductID)
 		if err != nil {
 			return nil, fmt.Errorf("product %s not found in this store", ci.VendorStoreProductID)
 		}

@@ -166,7 +166,7 @@ func main() {
 		inventory.NewHandler(inventoryService, vendorService).RegisterRoutes(r)
 
 		// Orders
-		order.NewHandler(orderService).RegisterRoutes(r)
+		order.NewHandler(orderService, db).RegisterRoutes(r)
 
 		// Customer-owned design assets
 		assetHandler.RegisterRoutes(r)

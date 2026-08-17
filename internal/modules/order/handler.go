@@ -1,7 +1,9 @@
 package order
 
 import (
+	"database/sql"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strings"
 
@@ -10,9 +12,12 @@ import (
 )
 
 // Handler exposes order HTTP endpoints.
-type Handler struct{ service Service }
+type Handler struct {
+	service Service
+	db      *sql.DB
+}
 
-func NewHandler(service Service) *Handler { return &Handler{service: service} }
+func NewHandler(service Service, db *sql.DB) *Handler { return &Handler{service: service, db: db} }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/orders", func(r chi.Router) {
@@ -34,6 +39,10 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 	}
 	if middleware.GetRole(r) == middleware.RoleCustomer {
 		req.CustomerID = middleware.GetUserID(r)
+		if err := h.validateCustomerAssets(r, req); err != nil {
+			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	o, err := h.service.PlaceOrder(r.Context(), req)
 	if err != nil {
@@ -48,6 +57,31 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusCreated, o)
+}
+
+func (h *Handler) validateCustomerAssets(r *http.Request, req PlaceOrderRequest) error {
+	for _, item := range req.Items {
+		if len(item.Customisation) == 0 {
+			continue
+		}
+		var customisation struct {
+			AssetID string `json:"asset_id"`
+		}
+		if err := json.Unmarshal(item.Customisation, &customisation); err != nil {
+			return err
+		}
+		if customisation.AssetID == "" {
+			continue
+		}
+		var exists bool
+		if err := h.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM design_assets WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL)`, customisation.AssetID, middleware.GetUserID(r)).Scan(&exists); err != nil {
+			return err
+		}
+		if !exists {
+			return fmt.Errorf("design asset is not available to the authenticated customer")
+		}
+	}
+	return nil
 }
 
 func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
