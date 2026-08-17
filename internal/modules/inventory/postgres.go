@@ -44,8 +44,8 @@ func (r *storePostgres) ListStoresByVendor(ctx context.Context, vendorID string)
 		return nil, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
-SELECT id,vendor_id,name,description,address,city,country,phone,email,is_active,created_at,updated_at
-FROM stores WHERE vendor_id=$1 ORDER BY created_at DESC`, uid)
+	SELECT id,vendor_id,name,description,address,city,country,phone,email,is_active,created_at,updated_at
+	FROM stores WHERE vendor_id=$1 AND is_active=true ORDER BY created_at DESC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +60,49 @@ FROM stores WHERE vendor_id=$1 ORDER BY created_at DESC`, uid)
 		}
 		stores = append(stores, s)
 	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
 	return stores, nil
+}
+
+func (r *storePostgres) UpdateStore(ctx context.Context, s *Store) error {
+	result, err := r.db.ExecContext(ctx, `
+	UPDATE stores
+	SET name=$2, description=$3, address=$4, city=$5, country=$6, phone=$7, email=$8, updated_at=NOW()
+	WHERE id=$1 AND is_active=true`,
+		s.ID, s.Name, s.Description, s.Address, s.City, s.Country, s.Phone, s.Email)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
+func (r *storePostgres) DeactivateStore(ctx context.Context, id string) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, `
+	UPDATE stores SET is_active=false, updated_at=NOW() WHERE id=$1 AND is_active=true`, uid)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
 }
 
 // ---- StoreStaff ----

@@ -13,6 +13,8 @@ type Service interface {
 	CreateStore(ctx context.Context, req CreateStoreRequest) (*Store, error)
 	GetStore(ctx context.Context, id string) (*Store, error)
 	ListStores(ctx context.Context, vendorID string) ([]*Store, error)
+	UpdateStore(ctx context.Context, id string, req UpdateStoreRequest) (*Store, error)
+	DeactivateStore(ctx context.Context, id string) error
 
 	// Staff operations
 	AddStaff(ctx context.Context, storeID, userID, role string) (*StoreStaff, error)
@@ -30,6 +32,18 @@ type Service interface {
 // CreateStoreRequest holds data for creating a store.
 type CreateStoreRequest struct {
 	VendorID    string `json:"vendor_id"`
+	Name        string `json:"name"`
+	Description string `json:"description"`
+	Address     string `json:"address"`
+	City        string `json:"city"`
+	Country     string `json:"country"`
+	Phone       string `json:"phone"`
+	Email       string `json:"email"`
+}
+
+// UpdateStoreRequest holds the mutable attributes of a vendor store.
+// Ownership and active-state controls are intentionally excluded from this public request.
+type UpdateStoreRequest struct {
 	Name        string `json:"name"`
 	Description string `json:"description"`
 	Address     string `json:"address"`
@@ -96,6 +110,33 @@ func (s *service) GetStore(ctx context.Context, id string) (*Store, error) {
 
 func (s *service) ListStores(ctx context.Context, vendorID string) ([]*Store, error) {
 	return s.storeRepo.ListStoresByVendor(ctx, vendorID)
+}
+
+func (s *service) UpdateStore(ctx context.Context, id string, req UpdateStoreRequest) (*Store, error) {
+	store, err := s.storeRepo.GetStoreByID(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	store.Name = req.Name
+	store.Description = req.Description
+	store.Address = req.Address
+	store.City = req.City
+	store.Country = req.Country
+	store.Phone = req.Phone
+	store.Email = req.Email
+	if store.Country == "" {
+		store.Country = "Zambia"
+	}
+
+	if err := s.storeRepo.UpdateStore(ctx, store); err != nil {
+		return nil, err
+	}
+	return s.storeRepo.GetStoreByID(ctx, id)
+}
+
+func (s *service) DeactivateStore(ctx context.Context, id string) error {
+	return s.storeRepo.DeactivateStore(ctx, id)
 }
 
 func (s *service) AddStaff(ctx context.Context, storeID, userID, role string) (*StoreStaff, error) {

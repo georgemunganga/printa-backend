@@ -1,0 +1,7 @@
+# Docker Compose is intentionally not used by the current Printa backend workflow.
+#
+# Local development uses the sandbox PostgreSQL service configured in `.env` and
+# the safe Makefile commands. This placeholder replaces an unsafe legacy file.
+# Do not add deployment commands or embedded credentials here.
+name: printa-backend
+services: {}

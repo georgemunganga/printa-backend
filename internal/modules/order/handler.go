@@ -15,12 +15,12 @@ func NewHandler(service Service) *Handler { return &Handler{service: service} }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/orders", func(r chi.Router) {
-		r.Post("/", h.placeOrder)                         // POST   /api/v1/orders
-		r.Get("/{id}", h.getOrder)                        // GET    /api/v1/orders/{id}
-		r.Get("/number/{number}", h.getOrderByNumber)     // GET    /api/v1/orders/number/{number}
-		r.Patch("/{id}/status", h.updateStatus)           // PATCH  /api/v1/orders/{id}/status
-		r.Delete("/{id}", h.cancelOrder)                  // DELETE /api/v1/orders/{id}
-		r.Get("/store/{store_id}", h.listStoreOrders)     // GET    /api/v1/orders/store/{store_id}?status=PENDING
+		r.Post("/", h.placeOrder)                              // POST   /api/v1/orders
+		r.Get("/{id}", h.getOrder)                             // GET    /api/v1/orders/{id}
+		r.Get("/number/{number}", h.getOrderByNumber)          // GET    /api/v1/orders/number/{number}
+		r.Patch("/{id}/status", h.updateStatus)                // PATCH  /api/v1/orders/{id}/status
+		r.Delete("/{id}", h.cancelOrder)                       // DELETE /api/v1/orders/{id}
+		r.Get("/store/{store_id}", h.listStoreOrders)          // GET    /api/v1/orders/store/{store_id}?status=PENDING
 		r.Get("/customer/{customer_id}", h.listCustomerOrders) // GET /api/v1/orders/customer/{customer_id}
 	})
 }
@@ -110,6 +110,9 @@ func (h *Handler) listStoreOrders(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
+	if orders == nil {
+		orders = make([]*Order, 0)
+	}
 	respond(w, http.StatusOK, orders)
 }
 
@@ -119,6 +122,9 @@ func (h *Handler) listCustomerOrders(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if orders == nil {
+		orders = make([]*Order, 0)
 	}
 	respond(w, http.StatusOK, orders)
 }

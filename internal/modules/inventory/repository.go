@@ -7,6 +7,8 @@ type StoreRepository interface {
 	CreateStore(ctx context.Context, s *Store) error
 	GetStoreByID(ctx context.Context, id string) (*Store, error)
 	ListStoresByVendor(ctx context.Context, vendorID string) ([]*Store, error)
+	UpdateStore(ctx context.Context, s *Store) error
+	DeactivateStore(ctx context.Context, id string) error
 }
 
 // StoreStaffRepository defines store staff data storage.

@@ -25,6 +25,8 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		// Store endpoints
 		r.Post("/stores", h.createStore)
 		r.Get("/stores/{id}", h.getStore)
+		r.Put("/stores/{id}", h.updateStore)
+		r.Delete("/stores/{id}", h.deactivateStore)
 		r.Get("/stores", h.listStores)
 
 		// Staff endpoints
@@ -86,6 +88,43 @@ func (h *Handler) getStore(w http.ResponseWriter, r *http.Request) {
 	respond(w, http.StatusOK, store)
 }
 
+func (h *Handler) updateStore(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if _, ok := h.requireStoreAccess(w, r, id, false); !ok {
+		return
+	}
+
+	var req UpdateStoreRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if req.Name == "" || req.Address == "" {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "name and address are required"})
+		return
+	}
+
+	store, err := h.service.UpdateStore(r.Context(), id, req)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, store)
+}
+
+// deactivateStore performs a soft delete so historical orders and inventory remain intact.
+func (h *Handler) deactivateStore(w http.ResponseWriter, r *http.Request) {
+	id := chi.URLParam(r, "id")
+	if _, ok := h.requireStoreAccess(w, r, id, false); !ok {
+		return
+	}
+	if err := h.service.DeactivateStore(r.Context(), id); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	w.WriteHeader(http.StatusNoContent)
+}
+
 func (h *Handler) listStores(w http.ResponseWriter, r *http.Request) {
 	vendorID := r.URL.Query().Get("vendor_id")
 	switch middleware.GetRole(r) {
@@ -113,6 +152,9 @@ func (h *Handler) listStores(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if stores == nil {
+		stores = make([]*Store, 0)
 	}
 	respond(w, http.StatusOK, stores)
 }
@@ -155,6 +197,9 @@ func (h *Handler) listStaff(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if staff == nil {
+		staff = make([]*StoreStaff, 0)
 	}
 	respond(w, http.StatusOK, staff)
 }
@@ -209,6 +254,9 @@ func (h *Handler) listProducts(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
+	}
+	if products == nil {
+		products = make([]*VendorStoreProduct, 0)
 	}
 	respond(w, http.StatusOK, products)
 }

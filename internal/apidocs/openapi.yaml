@@ -347,6 +347,30 @@ paths:
         '200': { $ref: '#/components/responses/ObjectResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Inventory]
+      summary: Update a vendor-owned store
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StoreUpdate' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Inventory]
+      summary: Deactivate a vendor-owned store
+      description: Performs a soft deletion so historical operational records remain available.
+      responses:
+        '204': { description: Store deactivated }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /api/v1/inventory/stores/{store_id}/staff:
     parameters: [ { $ref: '#/components/parameters/StoreID' } ]
     get:
@@ -1493,6 +1517,17 @@ components:
         address: { type: string }
         city: { type: string }
         country: { type: string }
+        phone: { type: string }
+        email: { type: string, format: email }
+    StoreUpdate:
+      type: object
+      required: [name, address]
+      properties:
+        name: { type: string }
+        description: { type: string }
+        address: { type: string }
+        city: { type: string }
+        country: { type: string, default: Zambia }
         phone: { type: string }
         email: { type: string, format: email }
     StoreStaffAssignment:
