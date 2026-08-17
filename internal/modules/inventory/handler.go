@@ -20,6 +20,14 @@ func NewHandler(service Service, vendorService vendor.Service) *Handler {
 	return &Handler{service: service, vendorService: vendorService}
 }
 
+// RegisterStorefrontRoutes exposes only active stores and available products for customer browsing.
+func (h *Handler) RegisterStorefrontRoutes(r chi.Router) {
+	r.Route("/api/v1/storefront", func(r chi.Router) {
+		r.Get("/stores", h.listStorefrontStores)
+		r.Get("/stores/{store_id}/products", h.listStorefrontProducts)
+	})
+}
+
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/inventory", func(r chi.Router) {
 		// Store endpoints
@@ -123,6 +131,30 @@ func (h *Handler) deactivateStore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	w.WriteHeader(http.StatusNoContent)
+}
+
+func (h *Handler) listStorefrontStores(w http.ResponseWriter, r *http.Request) {
+	stores, err := h.service.ListStorefrontStores(r.Context())
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if stores == nil {
+		stores = make([]*Store, 0)
+	}
+	respond(w, http.StatusOK, stores)
+}
+
+func (h *Handler) listStorefrontProducts(w http.ResponseWriter, r *http.Request) {
+	products, err := h.service.ListStorefrontProducts(r.Context(), chi.URLParam(r, "store_id"))
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	if products == nil {
+		products = make([]*StorefrontProduct, 0)
+	}
+	respond(w, http.StatusOK, products)
 }
 
 func (h *Handler) listStores(w http.ResponseWriter, r *http.Request) {

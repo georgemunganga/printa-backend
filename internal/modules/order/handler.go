@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -31,6 +32,9 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	if middleware.GetRole(r) == middleware.RoleCustomer {
+		req.CustomerID = middleware.GetUserID(r)
+	}
 	o, err := h.service.PlaceOrder(r.Context(), req)
 	if err != nil {
 		code := http.StatusInternalServerError
@@ -53,6 +57,9 @@ func (h *Handler) getOrder(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusNotFound, map[string]string{"error": err.Error()})
 		return
 	}
+	if !h.requireCustomerOrderAccess(w, r, o) {
+		return
+	}
 	respond(w, http.StatusOK, o)
 }
 
@@ -61,6 +68,9 @@ func (h *Handler) getOrderByNumber(w http.ResponseWriter, r *http.Request) {
 	o, err := h.service.GetOrderByNumber(r.Context(), number)
 	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	if !h.requireCustomerOrderAccess(w, r, o) {
 		return
 	}
 	respond(w, http.StatusOK, o)
@@ -89,6 +99,14 @@ func (h *Handler) updateStatus(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 	id := chi.URLParam(r, "id")
+	o, err := h.service.GetOrder(r.Context(), id)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": err.Error()})
+		return
+	}
+	if !h.requireCustomerOrderAccess(w, r, o) {
+		return
+	}
 	if err := h.service.CancelOrder(r.Context(), id); err != nil {
 		code := http.StatusInternalServerError
 		if strings.Contains(err.Error(), "only PENDING") {
@@ -118,6 +136,10 @@ func (h *Handler) listStoreOrders(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listCustomerOrders(w http.ResponseWriter, r *http.Request) {
 	customerID := chi.URLParam(r, "customer_id")
+	if middleware.GetRole(r) == middleware.RoleCustomer && customerID != middleware.GetUserID(r) {
+		respond(w, http.StatusForbidden, map[string]string{"error": "customer scope does not match authenticated user"})
+		return
+	}
 	orders, err := h.service.ListCustomerOrders(r.Context(), customerID)
 	if err != nil {
 		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -127,6 +149,17 @@ func (h *Handler) listCustomerOrders(w http.ResponseWriter, r *http.Request) {
 		orders = make([]*Order, 0)
 	}
 	respond(w, http.StatusOK, orders)
+}
+
+func (h *Handler) requireCustomerOrderAccess(w http.ResponseWriter, r *http.Request, o *Order) bool {
+	if middleware.GetRole(r) != middleware.RoleCustomer {
+		return true
+	}
+	if o.CustomerID == nil || o.CustomerID.String() != middleware.GetUserID(r) {
+		respond(w, http.StatusForbidden, map[string]string{"error": "order does not belong to authenticated customer"})
+		return false
+	}
+	return true
 }
 
 func respond(w http.ResponseWriter, status int, body interface{}) {

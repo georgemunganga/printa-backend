@@ -66,6 +66,27 @@ func (r *storePostgres) ListStoresByVendor(ctx context.Context, vendorID string)
 	return stores, nil
 }
 
+func (r *storePostgres) ListActiveStores(ctx context.Context) ([]*Store, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id,vendor_id,name,description,address,city,country,phone,email,is_active,created_at,updated_at
+		FROM stores WHERE is_active=true ORDER BY created_at DESC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var stores []*Store
+	for rows.Next() {
+		s := &Store{}
+		if err := rows.Scan(&s.ID, &s.VendorID, &s.Name, &s.Description, &s.Address,
+			&s.City, &s.Country, &s.Phone, &s.Email, &s.IsActive, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			return nil, err
+		}
+		stores = append(stores, s)
+	}
+	return stores, rows.Err()
+}
+
 func (r *storePostgres) UpdateStore(ctx context.Context, s *Store) error {
 	result, err := r.db.ExecContext(ctx, `
 	UPDATE stores
@@ -209,6 +230,38 @@ FROM vendor_store_products WHERE store_id=$1 ORDER BY created_at DESC`, uid)
 		products = append(products, p)
 	}
 	return products, nil
+}
+
+func (r *productPostgres) ListAvailableStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error) {
+	uid, err := uuid.Parse(storeID)
+	if err != nil {
+		return nil, err
+	}
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT vsp.id, vsp.store_id, pp.name, pp.description, pp.category,
+		       vsp.vendor_price, vsp.currency, pp.image_url,
+		       (vsp.is_available AND vsp.stock_quantity > 0) AS in_stock
+		FROM vendor_store_products vsp
+		JOIN platform_products pp ON pp.id = vsp.platform_product_id
+		JOIN stores s ON s.id = vsp.store_id
+		WHERE vsp.store_id=$1 AND s.is_active=true AND vsp.is_available=true
+		  AND vsp.stock_quantity > 0 AND pp.is_active=true
+		ORDER BY pp.name ASC`, uid)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var products []*StorefrontProduct
+	for rows.Next() {
+		p := &StorefrontProduct{}
+		if err := rows.Scan(&p.ID, &p.StoreID, &p.Name, &p.Description, &p.Category,
+			&p.Price, &p.Currency, &p.ImageURL, &p.InStock); err != nil {
+			return nil, err
+		}
+		products = append(products, p)
+	}
+	return products, rows.Err()
 }
 
 func (r *productPostgres) UpdateStock(ctx context.Context, id string, qty int) error {

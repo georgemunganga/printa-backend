@@ -13,6 +13,8 @@ type Service interface {
 	CreateStore(ctx context.Context, req CreateStoreRequest) (*Store, error)
 	GetStore(ctx context.Context, id string) (*Store, error)
 	ListStores(ctx context.Context, vendorID string) ([]*Store, error)
+	ListStorefrontStores(ctx context.Context) ([]*Store, error)
+	ListStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error)
 	UpdateStore(ctx context.Context, id string, req UpdateStoreRequest) (*Store, error)
 	DeactivateStore(ctx context.Context, id string) error
 
@@ -110,6 +112,14 @@ func (s *service) GetStore(ctx context.Context, id string) (*Store, error) {
 
 func (s *service) ListStores(ctx context.Context, vendorID string) ([]*Store, error) {
 	return s.storeRepo.ListStoresByVendor(ctx, vendorID)
+}
+
+func (s *service) ListStorefrontStores(ctx context.Context) ([]*Store, error) {
+	return s.storeRepo.ListActiveStores(ctx)
+}
+
+func (s *service) ListStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error) {
+	return s.productRepo.ListAvailableStorefrontProducts(ctx, storeID)
 }
 
 func (s *service) UpdateStore(ctx context.Context, id string, req UpdateStoreRequest) (*Store, error) {

@@ -7,6 +7,7 @@ type StoreRepository interface {
 	CreateStore(ctx context.Context, s *Store) error
 	GetStoreByID(ctx context.Context, id string) (*Store, error)
 	ListStoresByVendor(ctx context.Context, vendorID string) ([]*Store, error)
+	ListActiveStores(ctx context.Context) ([]*Store, error)
 	UpdateStore(ctx context.Context, s *Store) error
 	DeactivateStore(ctx context.Context, id string) error
 }
@@ -23,6 +24,7 @@ type ProductRepository interface {
 	AddProduct(ctx context.Context, p *VendorStoreProduct) error
 	GetProductByID(ctx context.Context, id string) (*VendorStoreProduct, error)
 	ListProducts(ctx context.Context, storeID string) ([]*VendorStoreProduct, error)
+	ListAvailableStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error)
 	UpdateStock(ctx context.Context, id string, qty int) error
 	UpdateAvailability(ctx context.Context, id string, available bool) error
 }

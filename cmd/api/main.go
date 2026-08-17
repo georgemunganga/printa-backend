@@ -132,6 +132,8 @@ func main() {
 	user.NewHandler(userService).RegisterPublicRoutes(router)
 	// Login
 	auth.NewHandler(authService).RegisterRoutes(router)
+	// Customer storefront browsing
+	inventory.NewHandler(inventoryService, vendorService).RegisterStorefrontRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
 	payment.NewHandler(paymentService, vendorService).RegisterWebhookRoutes(router)
 
