@@ -18,7 +18,7 @@ Every response includes `X-Request-ID`, which callers should capture when report
 
 ## Durable outbox
 
-Migration `000024_create_outbox_events` adds `outbox_events`. A domain event is recorded with its aggregate, payload, status, attempt count, availability time, and last error before it is eligible for delivery. The `internal/outbox` repository supports durable enqueue and pending-event reads. No permanent worker is started in this milestone: delivery execution, backoff policy, claiming with row locks, and dead-letter operations must be enabled only with a deployed worker process and external provider configuration.
+Migration `000024_create_outbox_events` adds `outbox_events`. A domain event is recorded with its aggregate, payload, status, attempt count, availability time, and last error before it is eligible for delivery. The `internal/outbox` repository supports durable enqueue, safe concurrent claims using PostgreSQL row locks and `SKIP LOCKED`, completion acknowledgement, retry scheduling, expired-lease recovery, and a bounded dead-letter state. No permanent worker is started in this milestone: delivery execution must be enabled only with a deployed worker process and external provider configuration. A worker must call `ClaimPending`, invoke an idempotent downstream delivery, then call either `MarkDelivered` or `MarkFailed` with a bounded retry policy.
 
 ## Local verification
 
