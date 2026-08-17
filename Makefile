@@ -3,7 +3,7 @@ APP_NAME ?= printa-api
 BIN_DIR ?= bin
 APP_PORT ?= 18080
 
-.PHONY: help fmt format-check vet test build run verify-migrations migrate-up migrate-down openapi-check check clean
+.PHONY: help fmt format-check vet test build build-worker run run-worker verify-migrations migrate-up migrate-down openapi-check check clean
 
 help:
 	@printf '%s\n' \
@@ -13,7 +13,9 @@ help:
   '  make vet               Run go vet' \
 	  '  make test              Run all Go tests' \
 	  '  make build             Build bin/printa-api' \
+	  '  make build-worker      Build bin/printa-outbox-worker' \
 	  '  make run               Run the API using the current environment' \
+	  '  make run-worker        Run the outbox worker using the current environment' \
 	  '  make verify-migrations Verify numbered up/down migration pairs' \
 	  '  make migrate-up        Apply migrations (requires DATABASE_URL and migrate CLI)' \
 	  '  make migrate-down      Roll back one migration (requires DATABASE_URL and migrate CLI)' \
@@ -41,8 +43,15 @@ build:
 	@mkdir -p $(BIN_DIR)
 	$(GO) build -o $(BIN_DIR)/$(APP_NAME) ./cmd/api
 
+build-worker:
+	@mkdir -p $(BIN_DIR)
+	$(GO) build -o $(BIN_DIR)/printa-outbox-worker ./cmd/worker
+
 run:
 	APP_PORT=$(APP_PORT) $(GO) run ./cmd/api
+
+run-worker:
+	$(GO) run ./cmd/worker
 
 verify-migrations:
 	@./scripts/verify_migrations.sh
@@ -59,7 +68,7 @@ openapi-check:
 	@test -s internal/apidocs/openapi.yaml
 	@grep -q '^openapi: 3.0.3' internal/apidocs/openapi.yaml
 
-check: vet test verify-migrations openapi-check build
+check: vet test verify-migrations openapi-check build build-worker
 
 clean:
 	rm -rf $(BIN_DIR)

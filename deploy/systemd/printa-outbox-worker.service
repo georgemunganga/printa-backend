@@ -1,0 +1,23 @@
+[Unit]
+Description=Printa durable outbox worker
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=api
+Group=api
+WorkingDirectory=/opt/printa-backend
+EnvironmentFile=/etc/printa/printa.env
+ExecStart=/opt/printa-backend/bin/printa-outbox-worker
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=30
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/var/log/printa
+
+[Install]
+WantedBy=multi-user.target
