@@ -81,6 +81,8 @@ func main() {
 
 	deliveryRepo := delivery.NewPostgresRepository(db)
 	deliveryService := delivery.NewService(deliveryRepo)
+	zoneRepo := delivery.NewZonePostgresRepository(db)
+	zoneService := delivery.NewZoneService(zoneRepo)
 
 	attendanceRepo := attendance.NewPostgresRepository(db)
 	attendanceService := attendance.NewService(attendanceRepo)
@@ -158,6 +160,7 @@ func main() {
 	auth.NewHandler(authService).RegisterRoutes(router)
 	// Customer storefront browsing
 	inventory.NewHandler(inventoryService, vendorService, userService).RegisterStorefrontRoutes(router)
+	delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterStorefrontRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
 	payment.NewHandler(paymentService, vendorService, orderService).RegisterWebhookRoutes(router)
 
@@ -180,8 +183,9 @@ func main() {
 		// Orders
 		order.NewHandler(orderService, db).RegisterRoutes(r)
 
-		// Customer delivery locations
+		// Customer delivery locations and vendor delivery zones
 		delivery.NewHandler(deliveryService).RegisterRoutes(r)
+		delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// Order-scoped in-app conversations
 		conversation.NewHandler(conversationService, orderService, inventoryService, vendorService, assetHandler.Storage()).RegisterRoutes(r)

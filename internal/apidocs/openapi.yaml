@@ -513,6 +513,80 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/delivery/stores/{store_id}/zones:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Delivery]
+      summary: List delivery zones for an owned vendor store
+      x-required-roles: [VENDOR, ADMIN]
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Delivery]
+      summary: Create a city-level delivery zone for an owned vendor store
+      x-required-roles: [VENDOR, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryZone' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+  /api/v1/delivery/stores/{store_id}/zones/{id}:
+    parameters:
+      - $ref: '#/components/parameters/StoreID'
+      - $ref: '#/components/parameters/ID'
+    patch:
+      tags: [Delivery]
+      summary: Update a city-level delivery zone for an owned vendor store
+      x-required-roles: [VENDOR, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryZone' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Delivery]
+      summary: Remove a city-level delivery zone for an owned vendor store
+      x-required-roles: [VENDOR, ADMIN]
+      responses:
+        '204': { description: Delivery zone deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/storefront/stores/{store_id}/delivery-eligibility:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    post:
+      tags: [Delivery]
+      summary: Check city-level delivery eligibility for an active storefront store
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [city]
+              properties:
+                city: { type: string, example: Lusaka }
+                country: { type: string, example: Zambia }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/orders:
     post:
       tags: [Orders]
@@ -1610,6 +1684,14 @@ components:
         email: { type: string, format: email }
         latitude: { type: number, format: double, nullable: true, minimum: -90, maximum: 90 }
         longitude: { type: number, format: double, nullable: true, minimum: -180, maximum: 180 }
+    DeliveryZone:
+      type: object
+      required: [name, city]
+      properties:
+        name: { type: string, example: Lusaka Central }
+        city: { type: string, example: Lusaka }
+        country: { type: string, default: Zambia }
+        is_active: { type: boolean, default: true }
     StoreStaffAssignment:
       type: object
       required: [user_id]
