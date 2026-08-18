@@ -135,9 +135,12 @@ func (s *commsService) SendEvent(ctx context.Context, event notification.Event) 
 			Subject:     event.Title,
 			Body:        event.Body,
 		}
-		if _, err := s.Send(ctx, req); err != nil {
-			// Non-blocking: log but do not fail — notification record already saved
-			fmt.Printf("[comms] failed to send %s for event %s: %v\n", ch, event.Type, err)
+		result, err := s.Send(ctx, req)
+		if err != nil {
+			return fmt.Errorf("send %s notification event: %w", ch, err)
+		}
+		if result.Status == DeliveryFailed {
+			return fmt.Errorf("send %s notification event: %s", ch, result.Error)
 		}
 	}
 	return nil
