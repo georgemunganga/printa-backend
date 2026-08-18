@@ -147,7 +147,7 @@ func main() {
 	// Customer storefront browsing
 	inventory.NewHandler(inventoryService, vendorService).RegisterStorefrontRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
-	payment.NewHandler(paymentService, vendorService).RegisterWebhookRoutes(router)
+	payment.NewHandler(paymentService, vendorService, orderService).RegisterWebhookRoutes(router)
 
 	// ── PROTECTED ROUTES (JWT required) ─────────────────────
 	router.Group(func(r chi.Router) {
@@ -189,7 +189,7 @@ func main() {
 		comms.NewHandler(commsService).RegisterRoutes(r)
 
 		// Payments (protected)
-		payment.NewHandler(paymentService, vendorService).RegisterProtectedRoutes(r)
+		payment.NewHandler(paymentService, vendorService, orderService).RegisterProtectedRoutes(r)
 	})
 
 	// ── Start Server ─────────────────────────────────────────

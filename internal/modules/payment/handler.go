@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/georgemunganga/printa-backend/internal/middleware"
+	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
 )
@@ -16,10 +17,11 @@ import (
 type Handler struct {
 	service       Service
 	vendorService vendor.Service
+	orderService  order.Service
 }
 
-func NewHandler(service Service, vendorService vendor.Service) *Handler {
-	return &Handler{service: service, vendorService: vendorService}
+func NewHandler(service Service, vendorService vendor.Service, orderService order.Service) *Handler {
+	return &Handler{service: service, vendorService: vendorService, orderService: orderService}
 }
 
 // RegisterRoutes registers all routes (legacy — kept for backward compatibility).
@@ -55,7 +57,20 @@ func (h *Handler) initiate(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if !h.bindVendorRequest(w, r, &req.VendorID) {
+	if middleware.GetRole(r) == middleware.RoleCustomer {
+		if strings.ToUpper(req.ReferenceType) != "ORDER" {
+			respond(w, http.StatusBadRequest, map[string]string{"error": "customers may initiate payments only for orders"})
+			return
+		}
+		o, err := h.orderService.GetOrder(r.Context(), req.ReferenceID)
+		if err != nil || o.CustomerID == nil || o.CustomerID.String() != middleware.GetUserID(r) {
+			respond(w, http.StatusForbidden, map[string]string{"error": "order is not accessible to the authenticated customer"})
+			return
+		}
+		req.Amount = o.Total
+		req.Currency = o.Currency
+		req.VendorID = ""
+	} else if !h.bindVendorRequest(w, r, &req.VendorID) {
 		return
 	}
 	if headerKey := r.Header.Get("Idempotency-Key"); headerKey != "" {
