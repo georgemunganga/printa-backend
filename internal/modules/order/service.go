@@ -62,6 +62,9 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 	if req.IdempotencyKey != "" {
 		existing, err := s.repo.GetByIdempotencyKey(ctx, req.IdempotencyKey)
 		if err == nil {
+			if req.CustomerID != "" && (existing.CustomerID == nil || existing.CustomerID.String() != req.CustomerID) {
+				return nil, fmt.Errorf("idempotency key is already associated with another customer")
+			}
 			return existing, nil
 		}
 		if !strings.Contains(err.Error(), "no rows") && !strings.Contains(err.Error(), "not found") {
@@ -155,6 +158,9 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 	if err := s.repo.CreateOrder(ctx, o); err != nil {
 		if req.IdempotencyKey != "" && strings.Contains(err.Error(), "duplicate key") {
 			if existing, lookupErr := s.repo.GetByIdempotencyKey(ctx, req.IdempotencyKey); lookupErr == nil {
+				if req.CustomerID != "" && (existing.CustomerID == nil || existing.CustomerID.String() != req.CustomerID) {
+					return nil, fmt.Errorf("idempotency key is already associated with another customer")
+				}
 				return existing, nil
 			}
 		}
