@@ -452,6 +452,48 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/v1/inventory/stores/{store_id}/operating-hours:
+    parameters: [ { $ref: '#/components/parameters/StoreID' } ]
+    get:
+      tags: [Inventory]
+      summary: List published operating hours for an owned vendor store
+      x-required-roles: [VENDOR, ADMIN]
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    put:
+      tags: [Inventory]
+      summary: Replace the complete seven-day operating-hours schedule for an owned vendor store
+      x-required-roles: [VENDOR, ADMIN]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [hours]
+              properties:
+                hours:
+                  type: array
+                  minItems: 7
+                  maxItems: 7
+                  items:
+                    type: object
+                    required: [day_of_week, is_open]
+                    properties:
+                      day_of_week: { type: integer, minimum: 0, maximum: 6 }
+                      is_open: { type: boolean }
+                      opens_at: { type: string, pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' }
+                      closes_at: { type: string, pattern: '^([01]\\d|2[0-3]):[0-5]\\d$' }
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
   /api/v1/delivery/locations:
     get:
       tags: [Delivery]

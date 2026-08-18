@@ -23,6 +23,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/delivery"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/notification"
+	"github.com/georgemunganga/printa-backend/internal/modules/operatinghours"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/payment"
 	"github.com/georgemunganga/printa-backend/internal/modules/pos"
@@ -78,6 +79,9 @@ func main() {
 	staffRepo := inventory.NewStoreStaffPostgresRepository(db)
 	productRepo := inventory.NewProductPostgresRepository(db)
 	inventoryService := inventory.NewService(storeRepo, staffRepo, productRepo)
+
+	operatingHoursRepo := operatinghours.NewPostgresRepository(db)
+	operatingHoursService := operatinghours.NewService(operatingHoursRepo)
 
 	deliveryRepo := delivery.NewPostgresRepository(db)
 	deliveryService := delivery.NewService(deliveryRepo)
@@ -179,6 +183,7 @@ func main() {
 
 		// Inventory
 		inventory.NewHandler(inventoryService, vendorService, userService).RegisterRoutes(r)
+		operatinghours.NewHandler(operatingHoursService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// Orders
 		order.NewHandler(orderService, db).RegisterRoutes(r)
