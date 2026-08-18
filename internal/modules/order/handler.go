@@ -37,6 +37,11 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	req.IdempotencyKey = strings.TrimSpace(r.Header.Get("Idempotency-Key"))
+	if len(req.IdempotencyKey) > 128 {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "Idempotency-Key must not exceed 128 characters"})
+		return
+	}
 	if middleware.GetRole(r) == middleware.RoleCustomer {
 		req.CustomerID = middleware.GetUserID(r)
 		if err := h.validateCustomerAssets(r, req); err != nil {

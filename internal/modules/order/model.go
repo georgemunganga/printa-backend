@@ -44,6 +44,7 @@ type Order struct {
 	Notes           string          `json:"notes,omitempty"`
 	DeliveryAddress json.RawMessage `json:"delivery_address,omitempty"`
 	Metadata        json.RawMessage `json:"metadata,omitempty"`
+	IdempotencyKey  string          `json:"-"`
 	Items           []*OrderItem    `json:"items,omitempty"`
 	CreatedAt       time.Time       `json:"created_at"`
 	UpdatedAt       time.Time       `json:"updated_at"`
@@ -78,6 +79,7 @@ type PlaceOrderRequest struct {
 	Notes           string          `json:"notes,omitempty"`
 	DeliveryAddress json.RawMessage `json:"delivery_address,omitempty"`
 	Discount        float64         `json:"discount,omitempty"`
+	IdempotencyKey  string          `json:"-"`
 }
 
 // UpdateStatusRequest is the payload for advancing an order's status.

@@ -59,6 +59,15 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 	if req.StoreID == "" {
 		return nil, fmt.Errorf("store_id is required")
 	}
+	if req.IdempotencyKey != "" {
+		existing, err := s.repo.GetByIdempotencyKey(ctx, req.IdempotencyKey)
+		if err == nil {
+			return existing, nil
+		}
+		if !strings.Contains(err.Error(), "no rows") && !strings.Contains(err.Error(), "not found") {
+			return nil, fmt.Errorf("lookup idempotent order: %w", err)
+		}
+	}
 
 	storeID, err := uuid.Parse(req.StoreID)
 	if err != nil {
@@ -131,6 +140,7 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 		Currency:        "ZMW",
 		Notes:           req.Notes,
 		DeliveryAddress: req.DeliveryAddress,
+		IdempotencyKey:  req.IdempotencyKey,
 		Items:           items,
 	}
 
@@ -143,6 +153,11 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 	}
 
 	if err := s.repo.CreateOrder(ctx, o); err != nil {
+		if req.IdempotencyKey != "" && strings.Contains(err.Error(), "duplicate key") {
+			if existing, lookupErr := s.repo.GetByIdempotencyKey(ctx, req.IdempotencyKey); lookupErr == nil {
+				return existing, nil
+			}
+		}
 		return nil, fmt.Errorf("failed to persist order: %w", err)
 	}
 	return o, nil

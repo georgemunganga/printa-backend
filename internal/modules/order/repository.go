@@ -12,6 +12,7 @@ type Repository interface {
 
 	// GetOrderByNumber retrieves an order by its human-readable order number.
 	GetOrderByNumber(ctx context.Context, orderNumber string) (*Order, error)
+	GetByIdempotencyKey(ctx context.Context, key string) (*Order, error)
 
 	// ListOrdersByStore returns all orders for a given store, optionally filtered by status.
 	ListOrdersByStore(ctx context.Context, storeID string, status string) ([]*Order, error)

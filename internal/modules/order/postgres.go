@@ -24,11 +24,11 @@ func (r *postgresRepo) CreateOrder(ctx context.Context, o *Order) error {
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO orders
 		  (id, store_id, customer_id, order_number, status, channel,
-		   subtotal, discount, tax, total, currency, notes, delivery_address, metadata)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)`,
+		   subtotal, discount, tax, total, currency, notes, delivery_address, metadata, idempotency_key)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULLIF($15,''))`,
 		o.ID, o.StoreID, o.CustomerID, o.OrderNumber, o.Status, o.Channel,
 		o.Subtotal, o.Discount, o.Tax, o.Total, o.Currency, o.Notes,
-		nullableJSON(o.DeliveryAddress), nullableJSON(o.Metadata))
+		nullableJSON(o.DeliveryAddress), nullableJSON(o.Metadata), o.IdempotencyKey)
 	if err != nil {
 		return fmt.Errorf("insert order: %w", err)
 	}
@@ -47,6 +47,18 @@ func (r *postgresRepo) CreateOrder(ctx context.Context, o *Order) error {
 	}
 
 	return tx.Commit()
+}
+
+func (r *postgresRepo) GetByIdempotencyKey(ctx context.Context, key string) (*Order, error) {
+	o, err := r.scanOrder(r.db.QueryRowContext(ctx, `
+		SELECT id,store_id,customer_id,order_number,status,channel,
+		       subtotal,discount,tax,total,currency,notes,delivery_address,metadata,created_at,updated_at
+		FROM orders WHERE idempotency_key=$1`, key))
+	if err != nil {
+		return nil, err
+	}
+	o.Items, err = r.listItems(ctx, o.ID.String())
+	return o, err
 }
 
 func (r *postgresRepo) GetOrderByID(ctx context.Context, id string) (*Order, error) {
