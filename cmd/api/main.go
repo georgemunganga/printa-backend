@@ -29,6 +29,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/pos"
 	"github.com/georgemunganga/printa-backend/internal/modules/production"
 	"github.com/georgemunganga/printa-backend/internal/modules/routing"
+	"github.com/georgemunganga/printa-backend/internal/modules/submission"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
@@ -82,6 +83,9 @@ func main() {
 
 	operatingHoursRepo := operatinghours.NewPostgresRepository(db)
 	operatingHoursService := operatinghours.NewService(operatingHoursRepo)
+
+	submissionRepo := submission.NewPostgresRepository(db)
+	submissionService := submission.NewService(submissionRepo)
 
 	deliveryRepo := delivery.NewPostgresRepository(db)
 	deliveryService := delivery.NewService(deliveryRepo)
@@ -184,6 +188,7 @@ func main() {
 		// Inventory
 		inventory.NewHandler(inventoryService, vendorService, userService).RegisterRoutes(r)
 		operatinghours.NewHandler(operatingHoursService, inventoryService, vendorService).RegisterRoutes(r)
+		submission.NewHandler(submissionService).RegisterRoutes(r)
 
 		// Orders
 		order.NewHandler(orderService, db).RegisterRoutes(r)

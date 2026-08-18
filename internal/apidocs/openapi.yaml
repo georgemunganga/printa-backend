@@ -494,6 +494,36 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/submissions/feedback:
+    post:
+      tags: [Support]
+      summary: Submit role-separated customer or vendor feedback
+      x-required-roles: [CUSTOMER, VENDOR]
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/submissions/support:
+    post:
+      tags: [Support]
+      summary: Submit role-separated customer or vendor support request
+      x-required-roles: [CUSTOMER, VENDOR]
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/submissions/mine:
+    get:
+      tags: [Support]
+      summary: List the authenticated requester’s separated submissions
+      x-required-roles: [CUSTOMER, VENDOR]
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /api/v1/delivery/locations:
     get:
       tags: [Delivery]
