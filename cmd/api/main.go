@@ -14,6 +14,7 @@ import (
 	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/admin"
 	"github.com/georgemunganga/printa-backend/internal/modules/assets"
+	"github.com/georgemunganga/printa-backend/internal/modules/attendance"
 	"github.com/georgemunganga/printa-backend/internal/modules/auth"
 	"github.com/georgemunganga/printa-backend/internal/modules/billing"
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
@@ -75,6 +76,9 @@ func main() {
 	staffRepo := inventory.NewStoreStaffPostgresRepository(db)
 	productRepo := inventory.NewProductPostgresRepository(db)
 	inventoryService := inventory.NewService(storeRepo, staffRepo, productRepo)
+
+	attendanceRepo := attendance.NewPostgresRepository(db)
+	attendanceService := attendance.NewService(attendanceRepo)
 
 	orderRepo := order.NewPostgresRepository(db)
 	orderService := order.NewService(orderRepo)
@@ -176,6 +180,9 @@ func main() {
 
 		// Production
 		production.NewHandler(productionService, inventoryService, vendorService).RegisterRoutes(r)
+
+		// Staff attendance
+		attendance.NewHandler(attendanceService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// POS
 		pos.NewHandler(posService, inventoryService, vendorService).RegisterRoutes(r)
