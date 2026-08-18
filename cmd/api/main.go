@@ -177,7 +177,7 @@ func main() {
 		order.NewHandler(orderService, db).RegisterRoutes(r)
 
 		// Order-scoped in-app conversations
-		conversation.NewHandler(conversationService, orderService, inventoryService, vendorService).RegisterRoutes(r)
+		conversation.NewHandler(conversationService, orderService, inventoryService, vendorService, assetHandler.Storage()).RegisterRoutes(r)
 
 		// Customer-owned design assets
 		assetHandler.RegisterRoutes(r)

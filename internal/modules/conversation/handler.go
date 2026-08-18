@@ -2,8 +2,12 @@ package conversation
 
 import (
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"strings"
 
+	assetstore "github.com/georgemunganga/printa-backend/internal/assets"
 	"github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
@@ -16,14 +20,16 @@ type Handler struct {
 	orderService     order.Service
 	inventoryService inventory.Service
 	vendorService    vendor.Service
+	storage          assetstore.Storage
 }
 
-func NewHandler(service Service, orderService order.Service, inventoryService inventory.Service, vendorService vendor.Service) *Handler {
+func NewHandler(service Service, orderService order.Service, inventoryService inventory.Service, vendorService vendor.Service, storage assetstore.Storage) *Handler {
 	return &Handler{
 		service:          service,
 		orderService:     orderService,
 		inventoryService: inventoryService,
 		vendorService:    vendorService,
+		storage:          storage,
 	}
 }
 
@@ -31,6 +37,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/conversations", func(r chi.Router) {
 		r.Get("/orders/{order_id}/messages", h.listMessages)
 		r.Post("/orders/{order_id}/messages", h.sendMessage)
+		r.Get("/orders/{order_id}/messages/{message_id}/attachments/{asset_id}", h.getAttachment)
 	})
 }
 
@@ -43,6 +50,9 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	for _, message := range messages {
+		h.withAttachmentURLs(orderID, message)
 	}
 	respond(w, http.StatusOK, messages)
 }
@@ -57,12 +67,52 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
 		return
 	}
-	message, err := h.service.Send(r.Context(), orderID, middleware.GetUserID(r), req.Body)
+	message, err := h.service.Send(r.Context(), orderID, middleware.GetUserID(r), req.Body, req.AssetIDs)
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
+	for index, attachment := range message.Attachments {
+		details, err := h.service.GetAttachment(r.Context(), orderID, message.ID.String(), attachment.AssetID.String())
+		if err != nil {
+			respond(w, http.StatusInternalServerError, map[string]string{"error": "could not load persisted attachment metadata"})
+			return
+		}
+		message.Attachments[index] = details
+	}
+	h.withAttachmentURLs(orderID, message)
 	respond(w, http.StatusCreated, message)
+}
+
+func (h *Handler) withAttachmentURLs(orderID string, message *Message) {
+	for _, attachment := range message.Attachments {
+		attachment.URL = "/api/v1/conversations/orders/" + orderID + "/messages/" + message.ID.String() + "/attachments/" + attachment.AssetID.String()
+	}
+}
+
+func (h *Handler) getAttachment(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "order_id")
+	if !h.requireOrderAccess(w, r, orderID) {
+		return
+	}
+	attachment, err := h.service.GetAttachment(r.Context(), orderID, chi.URLParam(r, "message_id"), chi.URLParam(r, "asset_id"))
+	if err != nil {
+		if errors.Is(err, io.EOF) {
+			respond(w, http.StatusNotFound, map[string]string{"error": "attachment not found"})
+			return
+		}
+		respond(w, http.StatusNotFound, map[string]string{"error": "attachment not found"})
+		return
+	}
+	asset, err := h.storage.Open(r.Context(), attachment.AssetID.String(), attachment.OwnerID.String())
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "attachment not found"})
+		return
+	}
+	w.Header().Set("Content-Type", asset.ContentType)
+	w.Header().Set("Content-Disposition", "inline; filename=\""+strings.ReplaceAll(asset.Name, "\"", "")+"\"")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(asset.Content)
 }
 
 func (h *Handler) requireOrderAccess(w http.ResponseWriter, r *http.Request, orderID string) bool {

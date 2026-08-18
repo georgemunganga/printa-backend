@@ -22,9 +22,13 @@ func NewHandler(db *sql.DB) (*Handler, error) {
 	}
 	return &Handler{storage: storage}, nil
 }
+
+// Storage returns the configured asset storage for modules that add their own authorization boundary.
+func (h *Handler) Storage() assetstore.Storage { return h.storage }
+
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/assets", func(r chi.Router) {
-		r.With(middleware.RequireRole(middleware.RoleCustomer)).Post("/upload", h.upload)
+		r.With(middleware.RequireRole(middleware.RoleCustomer, middleware.RoleVendor, middleware.RoleStaff, middleware.RoleCashier)).Post("/upload", h.upload)
 		r.With(middleware.RequireRole(middleware.RoleCustomer)).Get("/{asset_id}", h.get)
 	})
 }
