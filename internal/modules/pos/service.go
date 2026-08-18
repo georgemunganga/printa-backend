@@ -35,6 +35,12 @@ func (s *service) RecordPayment(ctx context.Context, req CreateTransactionReques
 		return nil, fmt.Errorf("payment_method is required")
 	}
 
+	// A retry for an already completed order is idempotent: return the original
+	// transaction instead of creating another charge.
+	if existing, err := s.repo.GetByOrderID(ctx, req.OrderID); err == nil && existing.Status == TxCompleted {
+		return existing, nil
+	}
+
 	method := PaymentMethod(strings.ToUpper(req.PaymentMethod))
 	switch method {
 	case PaymentCash, PaymentCard, PaymentMobileMoney, PaymentVoucher:

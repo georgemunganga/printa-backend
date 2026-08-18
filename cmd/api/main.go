@@ -192,7 +192,7 @@ func main() {
 		attendance.NewHandler(attendanceService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// POS
-		pos.NewHandler(posService, inventoryService, vendorService).RegisterRoutes(r)
+		pos.NewHandler(posService, inventoryService, vendorService, orderService).RegisterRoutes(r)
 
 		// Billing
 		billing.NewHandler(billingService, vendorService).RegisterRoutes(r)

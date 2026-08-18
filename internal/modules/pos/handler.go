@@ -7,6 +7,7 @@ import (
 
 	"github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
+	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
 	"github.com/go-chi/chi/v5"
 )
@@ -16,13 +17,15 @@ type Handler struct {
 	service          Service
 	inventoryService inventory.Service
 	vendorService    vendor.Service
+	orderService     order.Service
 }
 
-func NewHandler(service Service, inventoryService inventory.Service, vendorService vendor.Service) *Handler {
+func NewHandler(service Service, inventoryService inventory.Service, vendorService vendor.Service, orderService order.Service) *Handler {
 	return &Handler{
 		service:          service,
 		inventoryService: inventoryService,
 		vendorService:    vendorService,
+		orderService:     orderService,
 	}
 }
 
@@ -45,6 +48,18 @@ func (h *Handler) recordPayment(w http.ResponseWriter, r *http.Request) {
 	if _, ok := h.requireStoreAccess(w, r, req.StoreID, true); !ok {
 		return
 	}
+	orderRecord, err := h.orderService.GetOrder(r.Context(), req.OrderID)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "order not found"})
+		return
+	}
+	if orderRecord.StoreID.String() != req.StoreID {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "order does not belong to the requested store"})
+		return
+	}
+	// Payment totals are always derived from the persisted order, never from client input.
+	req.Amount = orderRecord.Total
+
 	if middleware.GetRole(r) == middleware.RoleStaff || middleware.GetRole(r) == middleware.RoleCashier {
 		if req.CashierID != "" && req.CashierID != middleware.GetUserID(r) {
 			respond(w, http.StatusForbidden, map[string]string{"error": "cashier_id must match authenticated user"})
