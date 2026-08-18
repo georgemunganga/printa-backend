@@ -139,6 +139,29 @@ INSERT INTO store_staff (id,store_id,user_id,role) VALUES ($1,$2,$3,$4)`,
 	return err
 }
 
+func (r *staffPostgres) UpdateStaffRole(ctx context.Context, storeID, userID, role string) error {
+	sid, err := uuid.Parse(storeID)
+	if err != nil {
+		return err
+	}
+	uid, err := uuid.Parse(userID)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE store_staff SET role = $3, updated_at = NOW() WHERE store_id = $1 AND user_id = $2`, sid, uid, role)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
+	}
+	return nil
+}
+
 func (r *staffPostgres) ListStaff(ctx context.Context, storeID string) ([]*StoreStaff, error) {
 	uid, err := uuid.Parse(storeID)
 	if err != nil {
@@ -287,6 +310,25 @@ func (r *productPostgres) UpdateStock(ctx context.Context, id string, qty int) e
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return fmt.Errorf("product %s not found", id)
+	}
+	return nil
+}
+
+func (r *productPostgres) UpdateVendorPrice(ctx context.Context, id string, price float64) error {
+	uid, err := uuid.Parse(id)
+	if err != nil {
+		return err
+	}
+	result, err := r.db.ExecContext(ctx, `UPDATE vendor_store_products SET vendor_price = $2, updated_at = NOW() WHERE id = $1`, uid, price)
+	if err != nil {
+		return err
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if rows == 0 {
+		return sql.ErrNoRows
 	}
 	return nil
 }

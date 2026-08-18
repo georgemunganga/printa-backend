@@ -33,6 +33,7 @@ func (h *Handler) RegisterPublicRoutes(router *chi.Mux) {
 // RegisterProtectedRoutes registers routes that require authentication.
 func (h *Handler) RegisterProtectedRoutes(router chi.Router) {
 	router.Get("/api/v1/users/me", h.getCurrentUser)
+	router.Patch("/api/v1/users/me", h.updateCurrentUser)
 	router.Get("/api/v1/users/{id}", h.getUser)
 	router.Get("/api/v1/users", h.listUsers)
 }
@@ -62,6 +63,20 @@ func (h *Handler) getCurrentUser(w http.ResponseWriter, r *http.Request) {
 	u, err := h.service.GetUser(r.Context(), id)
 	if err != nil {
 		respond(w, http.StatusNotFound, map[string]string{"error": "user not found"})
+		return
+	}
+	respond(w, http.StatusOK, u)
+}
+
+func (h *Handler) updateCurrentUser(w http.ResponseWriter, r *http.Request) {
+	var req UpdateProfileRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	u, err := h.service.UpdateProfile(r.Context(), middleware.GetUserID(r), req)
+	if err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
 	respond(w, http.StatusOK, u)

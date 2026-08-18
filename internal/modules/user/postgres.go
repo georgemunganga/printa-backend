@@ -118,6 +118,21 @@ func (r *postgresRepository) GetUserByID(ctx context.Context, id string) (*User,
 	return u, nil
 }
 
+func (r *postgresRepository) UpdateProfile(ctx context.Context, id string, firstName, lastName, phone string) (*User, error) {
+	parsedID, err := uuid.Parse(id)
+	if err != nil {
+		return nil, err
+	}
+	_, err = r.db.ExecContext(ctx, `
+		UPDATE users
+		SET first_name = $2, last_name = $3, phone = NULLIF($4, ''), updated_at = NOW()
+		WHERE id = $1`, parsedID, firstName, lastName, phone)
+	if err != nil {
+		return nil, err
+	}
+	return r.GetUserByID(ctx, id)
+}
+
 func (r *postgresRepository) ListUsers(ctx context.Context) ([]*User, error) {
 	query := `
 		SELECT id, email, first_name, last_name,

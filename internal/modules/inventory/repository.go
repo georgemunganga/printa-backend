@@ -15,6 +15,7 @@ type StoreRepository interface {
 // StoreStaffRepository defines store staff data storage.
 type StoreStaffRepository interface {
 	AddStaff(ctx context.Context, staff *StoreStaff) error
+	UpdateStaffRole(ctx context.Context, storeID, userID, role string) error
 	ListStaff(ctx context.Context, storeID string) ([]*StoreStaff, error)
 	RemoveStaff(ctx context.Context, storeID, userID string) error
 }
@@ -26,5 +27,6 @@ type ProductRepository interface {
 	ListProducts(ctx context.Context, storeID string) ([]*VendorStoreProduct, error)
 	ListAvailableStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error)
 	UpdateStock(ctx context.Context, id string, qty int) error
+	UpdateVendorPrice(ctx context.Context, id string, price float64) error
 	UpdateAvailability(ctx context.Context, id string, available bool) error
 }

@@ -3,6 +3,7 @@ package user
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/google/uuid"
 	"golang.org/x/crypto/bcrypt"
@@ -48,6 +49,17 @@ func (s *service) RegisterUser(ctx context.Context, email, password, firstName, 
 
 func (s *service) GetUser(ctx context.Context, id string) (*User, error) {
 	return s.repo.GetUserByID(ctx, id)
+}
+
+func (s *service) GetUserByEmail(ctx context.Context, email string) (*User, error) {
+	return s.repo.GetUserByEmail(ctx, email)
+}
+
+func (s *service) UpdateProfile(ctx context.Context, id string, req UpdateProfileRequest) (*User, error) {
+	if strings.TrimSpace(req.FirstName) == "" || strings.TrimSpace(req.LastName) == "" {
+		return nil, errors.New("first_name and last_name are required")
+	}
+	return s.repo.UpdateProfile(ctx, id, strings.TrimSpace(req.FirstName), strings.TrimSpace(req.LastName), strings.TrimSpace(req.Phone))
 }
 
 func (s *service) ListUsers(ctx context.Context) ([]*User, error) {

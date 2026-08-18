@@ -153,7 +153,7 @@ func main() {
 	// Login
 	auth.NewHandler(authService).RegisterRoutes(router)
 	// Customer storefront browsing
-	inventory.NewHandler(inventoryService, vendorService).RegisterStorefrontRoutes(router)
+	inventory.NewHandler(inventoryService, vendorService, userService).RegisterStorefrontRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
 	payment.NewHandler(paymentService, vendorService, orderService).RegisterWebhookRoutes(router)
 
@@ -171,7 +171,7 @@ func main() {
 		catalog.NewHandler(catalogService).RegisterRoutes(r)
 
 		// Inventory
-		inventory.NewHandler(inventoryService, vendorService).RegisterRoutes(r)
+		inventory.NewHandler(inventoryService, vendorService, userService).RegisterRoutes(r)
 
 		// Orders
 		order.NewHandler(orderService, db).RegisterRoutes(r)

@@ -22,12 +22,14 @@ type Service interface {
 	AddStaff(ctx context.Context, storeID, userID, role string) (*StoreStaff, error)
 	ListStaff(ctx context.Context, storeID string) ([]*StoreStaff, error)
 	RemoveStaff(ctx context.Context, storeID, userID string) error
+	UpdateStaffRole(ctx context.Context, storeID, userID, role string) error
 
 	// Product listing operations
 	AddProduct(ctx context.Context, req AddProductRequest) (*VendorStoreProduct, error)
 	GetProduct(ctx context.Context, id string) (*VendorStoreProduct, error)
 	ListProducts(ctx context.Context, storeID string) ([]*VendorStoreProduct, error)
 	UpdateStock(ctx context.Context, productID string, qty int) error
+	UpdateVendorPrice(ctx context.Context, productID string, price float64) error
 	SetAvailability(ctx context.Context, productID string, available bool) error
 }
 
@@ -181,6 +183,13 @@ func (s *service) RemoveStaff(ctx context.Context, storeID, userID string) error
 	return s.staffRepo.RemoveStaff(ctx, storeID, userID)
 }
 
+func (s *service) UpdateStaffRole(ctx context.Context, storeID, userID, role string) error {
+	if _, ok := validStoreStaffRole(role); !ok {
+		return fmt.Errorf("role must be STAFF, MANAGER, or CASHIER")
+	}
+	return s.staffRepo.UpdateStaffRole(ctx, storeID, userID, role)
+}
+
 func (s *service) AddProduct(ctx context.Context, req AddProductRequest) (*VendorStoreProduct, error) {
 	sid, err := uuid.Parse(req.StoreID)
 	if err != nil {
@@ -218,7 +227,17 @@ func (s *service) ListProducts(ctx context.Context, storeID string) ([]*VendorSt
 }
 
 func (s *service) UpdateStock(ctx context.Context, productID string, qty int) error {
+	if qty < 0 {
+		return fmt.Errorf("quantity cannot be negative")
+	}
 	return s.productRepo.UpdateStock(ctx, productID, qty)
+}
+
+func (s *service) UpdateVendorPrice(ctx context.Context, productID string, price float64) error {
+	if price <= 0 {
+		return fmt.Errorf("vendor price must be greater than zero")
+	}
+	return s.productRepo.UpdateVendorPrice(ctx, productID, price)
 }
 
 func (s *service) SetAvailability(ctx context.Context, productID string, available bool) error {

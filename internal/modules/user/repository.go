@@ -9,6 +9,7 @@ type Repository interface {
 	GetUserByEmail(ctx context.Context, email string) (*User, error)
 	GetUserByPhone(ctx context.Context, phone string) (*User, error)
 	GetUserByID(ctx context.Context, id string) (*User, error)
+	UpdateProfile(ctx context.Context, id string, firstName, lastName, phone string) (*User, error)
 	ListUsers(ctx context.Context) ([]*User, error)
 	UpdateUserRole(ctx context.Context, id, role string) error
 	PromoteUserRole(ctx context.Context, id, role string) error

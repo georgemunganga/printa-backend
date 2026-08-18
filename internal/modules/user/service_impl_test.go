@@ -26,6 +26,9 @@ func (r *memoryRepository) GetUserByPhone(context.Context, string) (*User, error
 func (r *memoryRepository) GetUserByID(context.Context, string) (*User, error) {
 	return nil, errors.New("not found")
 }
+func (r *memoryRepository) UpdateProfile(context.Context, string, string, string, string) (*User, error) {
+	return nil, errors.New("not found")
+}
 func (r *memoryRepository) ListUsers(context.Context) ([]*User, error)            { return nil, nil }
 func (r *memoryRepository) UpdateUserRole(context.Context, string, string) error  { return nil }
 func (r *memoryRepository) PromoteUserRole(context.Context, string, string) error { return nil }
