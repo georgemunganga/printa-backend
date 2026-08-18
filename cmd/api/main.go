@@ -20,6 +20,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
 	"github.com/georgemunganga/printa-backend/internal/modules/comms"
 	"github.com/georgemunganga/printa-backend/internal/modules/conversation"
+	"github.com/georgemunganga/printa-backend/internal/modules/delivery"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/notification"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
@@ -77,6 +78,9 @@ func main() {
 	staffRepo := inventory.NewStoreStaffPostgresRepository(db)
 	productRepo := inventory.NewProductPostgresRepository(db)
 	inventoryService := inventory.NewService(storeRepo, staffRepo, productRepo)
+
+	deliveryRepo := delivery.NewPostgresRepository(db)
+	deliveryService := delivery.NewService(deliveryRepo)
 
 	attendanceRepo := attendance.NewPostgresRepository(db)
 	attendanceService := attendance.NewService(attendanceRepo)
@@ -175,6 +179,9 @@ func main() {
 
 		// Orders
 		order.NewHandler(orderService, db).RegisterRoutes(r)
+
+		// Customer delivery locations
+		delivery.NewHandler(deliveryService).RegisterRoutes(r)
 
 		// Order-scoped in-app conversations
 		conversation.NewHandler(conversationService, orderService, inventoryService, vendorService, assetHandler.Storage()).RegisterRoutes(r)

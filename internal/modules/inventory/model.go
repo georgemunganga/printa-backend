@@ -17,6 +17,8 @@ type Store struct {
 	Country     string    `json:"country"`
 	Phone       string    `json:"phone,omitempty"`
 	Email       string    `json:"email,omitempty"`
+	Latitude    *float64  `json:"latitude,omitempty"`
+	Longitude   *float64  `json:"longitude,omitempty"`
 	IsActive    bool      `json:"is_active"`
 	CreatedAt   time.Time `json:"created_at"`
 	UpdatedAt   time.Time `json:"updated_at"`

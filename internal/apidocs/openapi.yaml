@@ -24,6 +24,7 @@ tags:
   - name: Vendors
   - name: Catalog
   - name: Inventory
+  - name: Delivery
   - name: Orders
   - name: Routing
   - name: Production
@@ -450,6 +451,67 @@ paths:
         '200': { $ref: '#/components/responses/ObjectResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+
+  /api/v1/delivery/locations:
+    get:
+      tags: [Delivery]
+      summary: List saved delivery locations for the authenticated customer
+      x-required-roles: [CUSTOMER]
+      responses:
+        '200': { $ref: '#/components/responses/ArrayResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+    post:
+      tags: [Delivery]
+      summary: Create a saved delivery location for the authenticated customer
+      x-required-roles: [CUSTOMER]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryLocation' }
+      responses:
+        '201': { $ref: '#/components/responses/ObjectCreated' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/delivery/locations/{id}:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    patch:
+      tags: [Delivery]
+      summary: Update an owned saved delivery location
+      x-required-roles: [CUSTOMER]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/DeliveryLocation' }
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      tags: [Delivery]
+      summary: Delete an owned saved delivery location
+      x-required-roles: [CUSTOMER]
+      responses:
+        '204': { description: Delivery location deleted }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/delivery/locations/{id}/default:
+    parameters: [ { $ref: '#/components/parameters/ID' } ]
+    put:
+      tags: [Delivery]
+      summary: Set an owned saved delivery location as default
+      x-required-roles: [CUSTOMER]
+      responses:
+        '200': { $ref: '#/components/responses/ObjectResponse' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '404': { $ref: '#/components/responses/NotFound' }
 
   /api/v1/orders:
     post:
@@ -1519,6 +1581,22 @@ components:
         country: { type: string }
         phone: { type: string }
         email: { type: string, format: email }
+        latitude: { type: number, format: double, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, format: double, nullable: true, minimum: -180, maximum: 180 }
+    DeliveryLocation:
+      type: object
+      required: [label, recipient_name, recipient_phone, address_line1, city]
+      properties:
+        label: { type: string, example: Home }
+        recipient_name: { type: string, example: Jane Doe }
+        recipient_phone: { type: string, example: '0977000000' }
+        address_line1: { type: string, example: '1 Example Road' }
+        address_line2: { type: string, nullable: true }
+        city: { type: string, example: Lusaka }
+        country: { type: string, example: Zambia }
+        latitude: { type: number, format: double, nullable: true, example: -15.4167 }
+        longitude: { type: number, format: double, nullable: true, example: 28.2833 }
+        is_default: { type: boolean }
     StoreUpdate:
       type: object
       required: [name, address]
@@ -1530,6 +1608,8 @@ components:
         country: { type: string, default: Zambia }
         phone: { type: string }
         email: { type: string, format: email }
+        latitude: { type: number, format: double, nullable: true, minimum: -90, maximum: 90 }
+        longitude: { type: number, format: double, nullable: true, minimum: -180, maximum: 180 }
     StoreStaffAssignment:
       type: object
       required: [user_id]

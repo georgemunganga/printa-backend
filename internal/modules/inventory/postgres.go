@@ -16,10 +16,10 @@ func NewStorePostgresRepository(db *sql.DB) StoreRepository { return &storePostg
 
 func (r *storePostgres) CreateStore(ctx context.Context, s *Store) error {
 	_, err := r.db.ExecContext(ctx, `
-INSERT INTO stores (id,vendor_id,name,description,address,city,country,phone,email,is_active)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+INSERT INTO stores (id,vendor_id,name,description,address,city,country,phone,email,latitude,longitude,is_active)
+	VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)`,
 		s.ID, s.VendorID, s.Name, s.Description, s.Address,
-		s.City, s.Country, s.Phone, s.Email, s.IsActive)
+		s.City, s.Country, s.Phone, s.Email, s.Latitude, s.Longitude, s.IsActive)
 	return err
 }
 
@@ -30,10 +30,10 @@ func (r *storePostgres) GetStoreByID(ctx context.Context, id string) (*Store, er
 	}
 	s := &Store{}
 	err = r.db.QueryRowContext(ctx, `
-SELECT id,vendor_id,name,description,address,city,country,phone,email,is_active,created_at,updated_at
-FROM stores WHERE id=$1`, uid).
+SELECT id,vendor_id,name,description,address,city,country,phone,email,latitude,longitude,is_active,created_at,updated_at
+	FROM stores WHERE id=$1`, uid).
 		Scan(&s.ID, &s.VendorID, &s.Name, &s.Description, &s.Address,
-			&s.City, &s.Country, &s.Phone, &s.Email, &s.IsActive,
+			&s.City, &s.Country, &s.Phone, &s.Email, &s.Latitude, &s.Longitude, &s.IsActive,
 			&s.CreatedAt, &s.UpdatedAt)
 	return s, err
 }
@@ -44,8 +44,8 @@ func (r *storePostgres) ListStoresByVendor(ctx context.Context, vendorID string)
 		return nil, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
-	SELECT id,vendor_id,name,description,address,city,country,phone,email,is_active,created_at,updated_at
-	FROM stores WHERE vendor_id=$1 AND is_active=true ORDER BY created_at DESC`, uid)
+	SELECT id,vendor_id,name,description,address,city,country,phone,email,latitude,longitude,is_active,created_at,updated_at
+		FROM stores WHERE vendor_id=$1 AND is_active=true ORDER BY created_at DESC`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -54,7 +54,7 @@ func (r *storePostgres) ListStoresByVendor(ctx context.Context, vendorID string)
 	for rows.Next() {
 		s := &Store{}
 		if err := rows.Scan(&s.ID, &s.VendorID, &s.Name, &s.Description, &s.Address,
-			&s.City, &s.Country, &s.Phone, &s.Email, &s.IsActive,
+			&s.City, &s.Country, &s.Phone, &s.Email, &s.Latitude, &s.Longitude, &s.IsActive,
 			&s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -68,8 +68,8 @@ func (r *storePostgres) ListStoresByVendor(ctx context.Context, vendorID string)
 
 func (r *storePostgres) ListActiveStores(ctx context.Context) ([]*Store, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id,vendor_id,name,description,address,city,country,phone,email,is_active,created_at,updated_at
-		FROM stores WHERE is_active=true ORDER BY created_at DESC`)
+		SELECT id,vendor_id,name,description,address,city,country,phone,email,latitude,longitude,is_active,created_at,updated_at
+			FROM stores WHERE is_active=true ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -79,7 +79,7 @@ func (r *storePostgres) ListActiveStores(ctx context.Context) ([]*Store, error) 
 	for rows.Next() {
 		s := &Store{}
 		if err := rows.Scan(&s.ID, &s.VendorID, &s.Name, &s.Description, &s.Address,
-			&s.City, &s.Country, &s.Phone, &s.Email, &s.IsActive, &s.CreatedAt, &s.UpdatedAt); err != nil {
+			&s.City, &s.Country, &s.Phone, &s.Email, &s.Latitude, &s.Longitude, &s.IsActive, &s.CreatedAt, &s.UpdatedAt); err != nil {
 			return nil, err
 		}
 		stores = append(stores, s)
@@ -90,9 +90,9 @@ func (r *storePostgres) ListActiveStores(ctx context.Context) ([]*Store, error) 
 func (r *storePostgres) UpdateStore(ctx context.Context, s *Store) error {
 	result, err := r.db.ExecContext(ctx, `
 	UPDATE stores
-	SET name=$2, description=$3, address=$4, city=$5, country=$6, phone=$7, email=$8, updated_at=NOW()
-	WHERE id=$1 AND is_active=true`,
-		s.ID, s.Name, s.Description, s.Address, s.City, s.Country, s.Phone, s.Email)
+SET name=$2, description=$3, address=$4, city=$5, country=$6, phone=$7, email=$8, latitude=$9, longitude=$10, updated_at=NOW()
+		WHERE id=$1 AND is_active=true`,
+		s.ID, s.Name, s.Description, s.Address, s.City, s.Country, s.Phone, s.Email, s.Latitude, s.Longitude)
 	if err != nil {
 		return err
 	}

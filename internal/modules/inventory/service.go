@@ -35,26 +35,30 @@ type Service interface {
 
 // CreateStoreRequest holds data for creating a store.
 type CreateStoreRequest struct {
-	VendorID    string `json:"vendor_id"`
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Address     string `json:"address"`
-	City        string `json:"city"`
-	Country     string `json:"country"`
-	Phone       string `json:"phone"`
-	Email       string `json:"email"`
+	VendorID    string   `json:"vendor_id"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Address     string   `json:"address"`
+	City        string   `json:"city"`
+	Country     string   `json:"country"`
+	Phone       string   `json:"phone"`
+	Email       string   `json:"email"`
+	Latitude    *float64 `json:"latitude"`
+	Longitude   *float64 `json:"longitude"`
 }
 
 // UpdateStoreRequest holds the mutable attributes of a vendor store.
 // Ownership and active-state controls are intentionally excluded from this public request.
 type UpdateStoreRequest struct {
-	Name        string `json:"name"`
-	Description string `json:"description"`
-	Address     string `json:"address"`
-	City        string `json:"city"`
-	Country     string `json:"country"`
-	Phone       string `json:"phone"`
-	Email       string `json:"email"`
+	Name        string   `json:"name"`
+	Description string   `json:"description"`
+	Address     string   `json:"address"`
+	City        string   `json:"city"`
+	Country     string   `json:"country"`
+	Phone       string   `json:"phone"`
+	Email       string   `json:"email"`
+	Latitude    *float64 `json:"latitude"`
+	Longitude   *float64 `json:"longitude"`
 }
 
 // AddProductRequest holds data for listing a product in a store.
@@ -82,6 +86,9 @@ func NewService(storeRepo StoreRepository, staffRepo StoreStaffRepository, produ
 }
 
 func (s *service) CreateStore(ctx context.Context, req CreateStoreRequest) (*Store, error) {
+	if err := validateCoordinates(req.Latitude, req.Longitude); err != nil {
+		return nil, err
+	}
 	vendorID, err := uuid.Parse(req.VendorID)
 	if err != nil {
 		return nil, fmt.Errorf("invalid vendor_id: %w", err)
@@ -100,6 +107,8 @@ func (s *service) CreateStore(ctx context.Context, req CreateStoreRequest) (*Sto
 		Country:     country,
 		Phone:       req.Phone,
 		Email:       req.Email,
+		Latitude:    req.Latitude,
+		Longitude:   req.Longitude,
 		IsActive:    true,
 	}
 	if err := s.storeRepo.CreateStore(ctx, store); err != nil {
@@ -125,6 +134,9 @@ func (s *service) ListStorefrontProducts(ctx context.Context, storeID string) ([
 }
 
 func (s *service) UpdateStore(ctx context.Context, id string, req UpdateStoreRequest) (*Store, error) {
+	if err := validateCoordinates(req.Latitude, req.Longitude); err != nil {
+		return nil, err
+	}
 	store, err := s.storeRepo.GetStoreByID(ctx, id)
 	if err != nil {
 		return nil, err
@@ -137,6 +149,8 @@ func (s *service) UpdateStore(ctx context.Context, id string, req UpdateStoreReq
 	store.Country = req.Country
 	store.Phone = req.Phone
 	store.Email = req.Email
+	store.Latitude = req.Latitude
+	store.Longitude = req.Longitude
 	if store.Country == "" {
 		store.Country = "Zambia"
 	}
@@ -145,6 +159,19 @@ func (s *service) UpdateStore(ctx context.Context, id string, req UpdateStoreReq
 		return nil, err
 	}
 	return s.storeRepo.GetStoreByID(ctx, id)
+}
+
+func validateCoordinates(latitude, longitude *float64) error {
+	if (latitude == nil) != (longitude == nil) {
+		return fmt.Errorf("latitude and longitude must be supplied together")
+	}
+	if latitude != nil && (*latitude < -90 || *latitude > 90) {
+		return fmt.Errorf("latitude must be between -90 and 90")
+	}
+	if longitude != nil && (*longitude < -180 || *longitude > 180) {
+		return fmt.Errorf("longitude must be between -180 and 180")
+	}
+	return nil
 }
 
 func (s *service) DeactivateStore(ctx context.Context, id string) error {
