@@ -48,6 +48,10 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 			return
 		}
+		if err := h.validateCustomerDelivery(r, &req); err != nil {
+			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	o, err := h.service.PlaceOrder(r.Context(), req)
 	if err != nil {
@@ -86,6 +90,93 @@ func (h *Handler) validateCustomerAssets(r *http.Request, req PlaceOrderRequest)
 			return fmt.Errorf("design asset is not available to the authenticated customer")
 		}
 	}
+	return nil
+}
+
+type customerDeliveryInput struct {
+	Method     string `json:"method"`
+	LocationID string `json:"location_id"`
+}
+
+type canonicalCustomerDelivery struct {
+	Method         string   `json:"method"`
+	LocationID     string   `json:"location_id"`
+	Label          string   `json:"label"`
+	RecipientName  string   `json:"recipient_name"`
+	RecipientPhone string   `json:"recipient_phone"`
+	AddressLine1   string   `json:"address_line1"`
+	AddressLine2   string   `json:"address_line2,omitempty"`
+	City           string   `json:"city"`
+	Country        string   `json:"country"`
+	Latitude       *float64 `json:"latitude,omitempty"`
+	Longitude      *float64 `json:"longitude,omitempty"`
+	Coverage       string   `json:"coverage"`
+}
+
+// validateCustomerDelivery accepts a customer delivery order only when its referenced saved location belongs to the
+// authenticated customer and the requested store has an active matching city-level zone. Client address text and
+// coordinates are never persisted; the order receives a canonical server snapshot instead.
+func (h *Handler) validateCustomerDelivery(r *http.Request, req *PlaceOrderRequest) error {
+	if len(req.DeliveryAddress) == 0 || string(req.DeliveryAddress) == "null" {
+		return nil
+	}
+	var input customerDeliveryInput
+	if err := json.Unmarshal(req.DeliveryAddress, &input); err != nil {
+		return fmt.Errorf("delivery_address must be valid JSON")
+	}
+	switch strings.ToLower(strings.TrimSpace(input.Method)) {
+	case "", "pickup":
+		canonical, err := json.Marshal(map[string]string{"method": "pickup", "store_id": req.StoreID})
+		if err != nil {
+			return err
+		}
+		req.DeliveryAddress = canonical
+		return nil
+	case "delivery":
+		if input.LocationID == "" {
+			return fmt.Errorf("delivery orders require a saved delivery location")
+		}
+	default:
+		return fmt.Errorf("delivery_address.method must be pickup or delivery")
+	}
+
+	var snapshot canonicalCustomerDelivery
+	var latitude, longitude sql.NullFloat64
+	err := h.db.QueryRowContext(r.Context(), `
+		SELECT id, label, recipient_name, recipient_phone, address_line1, COALESCE(address_line2, ''), city, country, latitude, longitude
+		FROM customer_delivery_locations
+		WHERE id=$1 AND customer_id=$2`, input.LocationID, req.CustomerID).
+		Scan(&snapshot.LocationID, &snapshot.Label, &snapshot.RecipientName, &snapshot.RecipientPhone, &snapshot.AddressLine1, &snapshot.AddressLine2, &snapshot.City, &snapshot.Country, &latitude, &longitude)
+	if err == sql.ErrNoRows {
+		return fmt.Errorf("saved delivery location is not available to the authenticated customer")
+	}
+	if err != nil {
+		return err
+	}
+	var covered bool
+	if err := h.db.QueryRowContext(r.Context(), `
+		SELECT EXISTS(
+			SELECT 1 FROM store_delivery_zones
+			WHERE store_id=$1 AND is_active=true AND LOWER(city)=LOWER($2) AND LOWER(country)=LOWER($3)
+		)`, req.StoreID, snapshot.City, snapshot.Country).Scan(&covered); err != nil {
+		return err
+	}
+	if !covered {
+		return fmt.Errorf("the selected store does not cover this saved delivery location")
+	}
+	if latitude.Valid {
+		snapshot.Latitude = &latitude.Float64
+	}
+	if longitude.Valid {
+		snapshot.Longitude = &longitude.Float64
+	}
+	snapshot.Method = "delivery"
+	snapshot.Coverage = "CITY_LEVEL"
+	canonical, err := json.Marshal(snapshot)
+	if err != nil {
+		return err
+	}
+	req.DeliveryAddress = canonical
 	return nil
 }
 
