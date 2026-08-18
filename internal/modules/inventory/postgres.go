@@ -145,7 +145,13 @@ func (r *staffPostgres) ListStaff(ctx context.Context, storeID string) ([]*Store
 		return nil, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
-SELECT id,store_id,user_id,role,created_at,updated_at FROM store_staff WHERE store_id=$1`, uid)
+		SELECT ss.id, ss.store_id, ss.user_id, ss.role,
+		       COALESCE(u.first_name, ''), COALESCE(u.last_name, ''), u.email, u.is_active,
+		       ss.created_at, ss.updated_at
+		FROM store_staff ss
+		JOIN users u ON u.id = ss.user_id
+		WHERE ss.store_id = $1
+		ORDER BY u.first_name, u.last_name, u.email`, uid)
 	if err != nil {
 		return nil, err
 	}
@@ -153,7 +159,11 @@ SELECT id,store_id,user_id,role,created_at,updated_at FROM store_staff WHERE sto
 	var staff []*StoreStaff
 	for rows.Next() {
 		s := &StoreStaff{}
-		if err := rows.Scan(&s.ID, &s.StoreID, &s.UserID, &s.Role, &s.CreatedAt, &s.UpdatedAt); err != nil {
+		if err := rows.Scan(
+			&s.ID, &s.StoreID, &s.UserID, &s.Role,
+			&s.FirstName, &s.LastName, &s.Email, &s.IsActive,
+			&s.CreatedAt, &s.UpdatedAt,
+		); err != nil {
 			return nil, err
 		}
 		staff = append(staff, s)

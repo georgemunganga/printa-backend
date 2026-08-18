@@ -28,6 +28,10 @@ type StoreStaff struct {
 	StoreID   uuid.UUID `json:"store_id"`
 	UserID    uuid.UUID `json:"user_id"`
 	Role      string    `json:"role"` // MANAGER, STAFF, CASHIER
+	FirstName string    `json:"first_name,omitempty"`
+	LastName  string    `json:"last_name,omitempty"`
+	Email     string    `json:"email,omitempty"`
+	IsActive  bool      `json:"is_active"`
 	CreatedAt time.Time `json:"created_at"`
 	UpdatedAt time.Time `json:"updated_at"`
 }
