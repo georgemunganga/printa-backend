@@ -3,6 +3,9 @@ package main
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
+	"errors"
+	"fmt"
 	"log"
 	"os"
 	"os/signal"
@@ -11,6 +14,8 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/georgemunganga/printa-backend/internal/modules/comms"
+	"github.com/georgemunganga/printa-backend/internal/modules/notification"
 	"github.com/georgemunganga/printa-backend/internal/outbox"
 	"github.com/joho/godotenv"
 	_ "github.com/lib/pq"
@@ -33,9 +38,18 @@ func main() {
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 	defer stop()
+	commsService := comms.NewService(
+		comms.NewPostgresRepository(db),
+		comms.NewEmailAdapter(),
+		comms.NewSMSAdapter(),
+		comms.NewPushAdapter(),
+		comms.NewWhatsAppAdapter(),
+	)
 	worker := &outbox.Worker{
-		Repository:  outbox.NewRepository(db),
-		Handlers:    map[string]outbox.Handler{},
+		Repository: outbox.NewRepository(db),
+		Handlers: map[string]outbox.Handler{
+			"notification.dispatch.v1": notificationDispatchHandler(commsService),
+		},
 		PollEvery:   durationEnv("OUTBOX_POLL_INTERVAL", 2*time.Second),
 		LeaseFor:    durationEnv("OUTBOX_LEASE_DURATION", 5*time.Minute),
 		BatchSize:   intEnv("OUTBOX_BATCH_SIZE", 25),
@@ -47,6 +61,19 @@ func main() {
 		log.Fatal("outbox worker stopped with error:", err)
 	}
 	log.Println("Printa outbox worker stopped")
+}
+
+func notificationDispatchHandler(commsService comms.Service) outbox.Handler {
+	return func(ctx context.Context, event outbox.Event) error {
+		var notificationEvent notification.Event
+		if err := json.Unmarshal(event.Payload, &notificationEvent); err != nil {
+			return fmt.Errorf("decode notification event: %w", err)
+		}
+		if notificationEvent.RecipientID == "" || notificationEvent.Type == "" {
+			return errors.New("notification event requires recipient_id and type")
+		}
+		return commsService.SendEvent(ctx, notificationEvent)
+	}
 }
 
 func durationEnv(key string, fallback time.Duration) time.Duration {

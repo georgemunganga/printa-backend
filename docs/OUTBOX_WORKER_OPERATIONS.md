@@ -15,6 +15,14 @@ The worker requires the same `DATABASE_URL` used by the API. The following optio
 
 > The worker is deliberately safe by default. An event type without a registered handler is not discarded; it is retried and eventually dead-lettered for operator investigation.
 
+## Registered event contracts
+
+| Event type | Producer | Worker action | Delivery behavior |
+|---|---|---|---|
+| `notification.dispatch.v1` | Notification service `Dispatch` | Decode the notification event and call the communications service. | Uses existing per-channel idempotent delivery logging. Events without configured contact metadata are completed without an external send, preserving the in-app notification. |
+
+The API no longer starts a fire-and-forget communications goroutine for notification dispatch. It stores the customer-visible notification and records durable delivery work for the separately supervised worker.
+
 ## Build and local verification
 
 From the repository root, run:

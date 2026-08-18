@@ -2,7 +2,11 @@ package notification
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+
+	"github.com/georgemunganga/printa-backend/internal/outbox"
+	"github.com/google/uuid"
 )
 
 // Service is the core notification engine interface.
@@ -39,23 +43,21 @@ type Service interface {
 	GetUnreadCount(ctx context.Context, recipientID string) (int, error)
 }
 
-// ChannelDispatcher is the interface the comms module must implement.
-// The notification service calls this after storing a notification record.
-// This keeps Phase C and Phase D cleanly decoupled.
+// ChannelDispatcher remains the stable adapter contract used by the communications module.
+// Notification delivery now reaches this boundary from the durable worker.
 type ChannelDispatcher interface {
 	Send(ctx context.Context, event Event) error
 }
 
 type service struct {
-	repo       Repository
-	dispatcher ChannelDispatcher // nil until Phase D wires it in
+	repo   Repository
+	outbox *outbox.Repository
 }
 
-// NewService creates a new notification service.
-// dispatcher may be nil — notifications will be stored but not externally delivered
-// until Phase D wires in the comms module.
-func NewService(repo Repository, dispatcher ChannelDispatcher) Service {
-	return &service{repo: repo, dispatcher: dispatcher}
+// NewService creates notification records and records external-delivery work in
+// the durable outbox. The separately deployed worker owns the side effect.
+func NewService(repo Repository, outboxRepository *outbox.Repository) Service {
+	return &service{repo: repo, outbox: outboxRepository}
 }
 
 func (s *service) Create(ctx context.Context, req CreateRequest) (*Notification, error) {
@@ -119,12 +121,26 @@ func (s *service) Dispatch(ctx context.Context, event Event) error {
 	if err := s.repo.Create(ctx, n); err != nil {
 		return fmt.Errorf("dispatch notification: %w", err)
 	}
-	// 2. Hand off to comms module if wired in (Phase D)
-	if s.dispatcher != nil {
-		// Non-blocking: delivery failure should not fail the domain event
-		go func() {
-			_ = s.dispatcher.Send(context.Background(), event)
-		}()
+	// 2. Record delivery work for the separately supervised worker. Events are
+	// never sent in a fire-and-forget goroutine from the API process.
+	if s.outbox == nil {
+		return fmt.Errorf("notification outbox is not configured")
+	}
+	notificationID, err := uuid.Parse(n.ID)
+	if err != nil {
+		return fmt.Errorf("notification has invalid id: %w", err)
+	}
+	payload, err := json.Marshal(event)
+	if err != nil {
+		return fmt.Errorf("marshal notification event: %w", err)
+	}
+	if _, err := s.outbox.Enqueue(ctx, outbox.Event{
+		AggregateType: "notification",
+		AggregateID:   notificationID,
+		EventType:     "notification.dispatch.v1",
+		Payload:       payload,
+	}); err != nil {
+		return fmt.Errorf("enqueue notification delivery: %w", err)
 	}
 	return nil
 }
