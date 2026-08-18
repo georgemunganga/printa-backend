@@ -4,9 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-
-	"github.com/georgemunganga/printa-backend/internal/outbox"
-	"github.com/google/uuid"
 )
 
 // Service is the core notification engine interface.
@@ -50,14 +47,13 @@ type ChannelDispatcher interface {
 }
 
 type service struct {
-	repo   Repository
-	outbox *outbox.Repository
+	repo Repository
 }
 
-// NewService creates notification records and records external-delivery work in
-// the durable outbox. The separately deployed worker owns the side effect.
-func NewService(repo Repository, outboxRepository *outbox.Repository) Service {
-	return &service{repo: repo, outbox: outboxRepository}
+// NewService creates notification records and their delivery work atomically.
+// The separately deployed worker owns the external side effect.
+func NewService(repo Repository) Service {
+	return &service{repo: repo}
 }
 
 func (s *service) Create(ctx context.Context, req CreateRequest) (*Notification, error) {
@@ -118,31 +114,18 @@ func (s *service) Dispatch(ctx context.Context, event Event) error {
 		Priority:    event.Priority,
 		Metadata:    event.Metadata,
 	}
-	if err := s.repo.Create(ctx, n); err != nil {
-		return fmt.Errorf("dispatch notification: %w", err)
-	}
-	// 2. Record delivery work for the separately supervised worker. Events are
-	// never sent in a fire-and-forget goroutine from the API process.
-	if s.outbox == nil {
-		return fmt.Errorf("notification outbox is not configured")
-	}
-	notificationID, err := uuid.Parse(n.ID)
-	if err != nil {
-		return fmt.Errorf("notification has invalid id: %w", err)
-	}
 	payload, err := json.Marshal(event)
 	if err != nil {
 		return fmt.Errorf("marshal notification event: %w", err)
 	}
-	if _, err := s.outbox.Enqueue(ctx, outbox.Event{
-		AggregateType: "notification",
-		AggregateID:   notificationID,
-		EventType:     "notification.dispatch.v1",
-		Payload:       payload,
-	}); err != nil {
-		return fmt.Errorf("enqueue notification delivery: %w", err)
+	// Persist the notification and durable delivery instruction in one database
+	// transaction. A successful customer-visible notification can no longer lose
+	// its corresponding worker event because of a process crash between writes.
+	if err := s.repo.CreateWithOutbox(ctx, n, "notification.dispatch.v1", payload); err != nil {
+		return fmt.Errorf("dispatch notification transaction: %w", err)
 	}
 	return nil
+
 }
 
 func (s *service) GetByID(ctx context.Context, id string) (*Notification, error) {

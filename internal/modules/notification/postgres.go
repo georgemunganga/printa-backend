@@ -41,6 +41,47 @@ func (r *postgresRepository) Create(ctx context.Context, n *Notification) error 
 	return err
 }
 
+func (r *postgresRepository) CreateWithOutbox(ctx context.Context, n *Notification, eventType string, payload []byte) error {
+	if eventType == "" {
+		return fmt.Errorf("outbox event type is required")
+	}
+	if n.ID == "" {
+		n.ID = uuid.New().String()
+	}
+	if n.Priority == "" {
+		n.Priority = PriorityNormal
+	}
+	n.Status = StatusUnread
+	n.CreatedAt = time.Now()
+	n.UpdatedAt = n.CreatedAt
+	meta, _ := json.Marshal(n.Metadata)
+
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO notifications
+			(id, recipient_id, type, title, body, status, priority, metadata, created_at, updated_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10)`,
+		n.ID, n.RecipientID, string(n.Type), n.Title, n.Body, string(n.Status), string(n.Priority), string(meta), n.CreatedAt, n.UpdatedAt,
+	); err != nil {
+		return err
+	}
+	if len(payload) == 0 {
+		payload = []byte(`{}`)
+	}
+	if _, err := tx.ExecContext(ctx, `
+		INSERT INTO outbox_events (id, aggregate_type, aggregate_id, event_type, payload, status, available_at)
+		VALUES ($1,'notification',$2,$3,$4::jsonb,'PENDING',NOW())`,
+		uuid.New(), n.ID, eventType, string(payload),
+	); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
 func (r *postgresRepository) BulkCreate(ctx context.Context, notifications []*Notification) error {
 	if len(notifications) == 0 {
 		return nil

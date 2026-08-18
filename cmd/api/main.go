@@ -27,7 +27,6 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/routing"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
-	"github.com/georgemunganga/printa-backend/internal/outbox"
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
@@ -96,7 +95,6 @@ func main() {
 	adminService := admin.NewService(adminRepo)
 
 	notificationRepo := notification.NewPostgresRepository(db)
-	outboxRepo := outbox.NewRepository(db)
 	commsRepo := comms.NewPostgresRepository(db)
 	commsService := comms.NewService(commsRepo,
 		comms.NewEmailAdapter(),
@@ -104,7 +102,7 @@ func main() {
 		comms.NewPushAdapter(),
 		comms.NewWhatsAppAdapter(),
 	)
-	notificationService := notification.NewService(notificationRepo, outboxRepo)
+	notificationService := notification.NewService(notificationRepo)
 	authService := auth.NewService(
 		userRepo,
 		userService,
