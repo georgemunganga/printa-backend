@@ -19,6 +19,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/billing"
 	"github.com/georgemunganga/printa-backend/internal/modules/catalog"
 	"github.com/georgemunganga/printa-backend/internal/modules/comms"
+	"github.com/georgemunganga/printa-backend/internal/modules/conversation"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
 	"github.com/georgemunganga/printa-backend/internal/modules/notification"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
@@ -79,6 +80,9 @@ func main() {
 
 	attendanceRepo := attendance.NewPostgresRepository(db)
 	attendanceService := attendance.NewService(attendanceRepo)
+
+	conversationRepo := conversation.NewPostgresRepository(db)
+	conversationService := conversation.NewService(conversationRepo)
 
 	orderRepo := order.NewPostgresRepository(db)
 	orderService := order.NewService(orderRepo)
@@ -171,6 +175,9 @@ func main() {
 
 		// Orders
 		order.NewHandler(orderService, db).RegisterRoutes(r)
+
+		// Order-scoped in-app conversations
+		conversation.NewHandler(conversationService, orderService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// Customer-owned design assets
 		assetHandler.RegisterRoutes(r)
