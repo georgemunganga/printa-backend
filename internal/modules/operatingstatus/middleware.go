@@ -11,7 +11,7 @@ import (
 func RequireOperationalVendor(service Service, vendorService vendor.Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if middleware.GetRole(r) != middleware.RoleVendor || operatingStatusExemptPath(r.URL.Path) {
+			if middleware.GetRole(r) != middleware.RoleVendor || operatingStatusExemptRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -32,6 +32,16 @@ func RequireOperationalVendor(service Service, vendorService vendor.Service) fun
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func operatingStatusExemptRequest(r *http.Request) bool {
+	if operatingStatusExemptPath(r.URL.Path) {
+		return true
+	}
+
+	// Subscription and invoice reads are recovery information, not operational actions.
+	// Writes remain gated so a paused vendor cannot use billing endpoints to bypass controls.
+	return r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/billing/")
 }
 
 func operatingStatusExemptPath(path string) bool {
