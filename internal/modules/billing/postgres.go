@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"time"
 
 	"github.com/google/uuid"
@@ -253,6 +254,191 @@ func (r *postgresRepo) GetTierByID(ctx context.Context, tierID string) (string, 
 	err := r.db.QueryRowContext(ctx, `SELECT name, monthly_price FROM vendor_tiers WHERE id=$1`, tierID).
 		Scan(&name, &price)
 	return name, price, err
+}
+
+// ── Subscription checkout ────────────────────────────────────────────────────
+
+func (r *postgresRepo) GetTierCatalogueEntry(ctx context.Context, tierID string) (*VendorTier, error) {
+	row := r.db.QueryRowContext(ctx, `
+		SELECT id, name, monthly_price, features, created_at, updated_at
+		FROM vendor_tiers WHERE id=$1`, tierID)
+	return scanTier(row)
+}
+
+func (r *postgresRepo) CreateCheckout(ctx context.Context, checkout *SubscriptionCheckout) error {
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO subscription_checkouts
+		  (id, vendor_id, tier_id, amount, currency, reference, status, expires_at)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8)`,
+		checkout.ID, checkout.VendorID, checkout.TierID, checkout.Amount, checkout.Currency,
+		checkout.Reference, checkout.Status, checkout.ExpiresAt)
+	return err
+}
+
+func (r *postgresRepo) GetCheckoutByID(ctx context.Context, id string) (*SubscriptionCheckout, error) {
+	return r.scanCheckout(r.db.QueryRowContext(ctx, checkoutSelect+` WHERE sc.id=$1`, id))
+}
+
+func (r *postgresRepo) GetCheckoutByReference(ctx context.Context, reference string) (*SubscriptionCheckout, error) {
+	return r.scanCheckout(r.db.QueryRowContext(ctx, checkoutSelect+` WHERE sc.reference=$1`, reference))
+}
+
+func (r *postgresRepo) GetReusablePendingCheckout(ctx context.Context, vendorID, tierID string, now time.Time) (*SubscriptionCheckout, error) {
+	return r.scanCheckout(r.db.QueryRowContext(ctx, checkoutSelect+`
+		WHERE sc.vendor_id=$1 AND sc.tier_id=$2 AND sc.status='PENDING' AND sc.expires_at>$3
+		ORDER BY sc.created_at DESC LIMIT 1`, vendorID, tierID, now))
+}
+
+func (r *postgresRepo) RecordCheckoutCollection(ctx context.Context, id, providerCollectionID, providerStatus string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE subscription_checkouts
+		SET provider_collection_id=$1, provider_status=$2, updated_at=NOW()
+		WHERE id=$3 AND status='PENDING'`, providerCollectionID, providerStatus, id)
+	return err
+}
+
+func (r *postgresRepo) MarkCheckoutFailed(ctx context.Context, id, providerStatus, reason string) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE subscription_checkouts
+		SET status='FAILED', provider_status=$1, failure_reason=$2, updated_at=NOW()
+		WHERE id=$3 AND status='PENDING'`, providerStatus, reason, id)
+	return err
+}
+
+func (r *postgresRepo) ActivateCheckout(ctx context.Context, checkoutID, providerCollectionID, providerStatus string, completedAt time.Time) (*SubscriptionCheckout, error) {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	checkout, err := r.scanCheckout(tx.QueryRowContext(ctx, checkoutSelect+` WHERE sc.id=$1 FOR UPDATE`, checkoutID))
+	if err != nil {
+		return nil, err
+	}
+	if checkout.Status == CheckoutSuccessful {
+		if err := tx.Commit(); err != nil {
+			return nil, err
+		}
+		return checkout, nil
+	}
+	if checkout.Status != CheckoutPending {
+		return nil, fmt.Errorf("checkout is not pending")
+	}
+	if !checkout.ExpiresAt.After(completedAt) {
+		_, _ = tx.ExecContext(ctx, `UPDATE subscription_checkouts SET status='EXPIRED', updated_at=NOW() WHERE id=$1`, checkout.ID)
+		return nil, fmt.Errorf("checkout has expired")
+	}
+
+	periodStart := completedAt.UTC()
+	periodEnd := periodStart.AddDate(0, 1, 0)
+	var subscriptionID uuid.UUID
+	err = tx.QueryRowContext(ctx, `
+		INSERT INTO vendor_subscriptions
+		  (id, vendor_id, tier_id, status, billing_cycle, current_period_start, current_period_end, auto_renew)
+		VALUES (gen_random_uuid(), $1, $2, 'ACTIVE', 'MONTHLY', $3, $4, TRUE)
+		ON CONFLICT (vendor_id) DO UPDATE
+		SET tier_id=EXCLUDED.tier_id, status='ACTIVE', billing_cycle='MONTHLY',
+		    current_period_start=EXCLUDED.current_period_start,
+		    current_period_end=EXCLUDED.current_period_end,
+		    trial_ends_at=NULL, cancelled_at=NULL, cancel_reason=NULL, auto_renew=TRUE,
+		    updated_at=NOW()
+		RETURNING id`, checkout.VendorID, checkout.TierID, periodStart, periodEnd).Scan(&subscriptionID)
+	if err != nil {
+		return nil, err
+	}
+
+	invoiceKey := "subscription-checkout:" + checkout.ID.String()
+	var invoiceID uuid.UUID
+	err = tx.QueryRowContext(ctx, `SELECT id FROM billing_invoices WHERE idempotency_key=$1 FOR UPDATE`, invoiceKey).Scan(&invoiceID)
+	if err == sql.ErrNoRows {
+		invoiceID = uuid.New()
+		lineItems, marshalErr := json.Marshal([]LineItem{{
+			Description: fmt.Sprintf("Printa %s Plan (MONTHLY)", checkout.TierName),
+			Quantity:    1, UnitPrice: checkout.Amount, Amount: checkout.Amount,
+		}})
+		if marshalErr != nil {
+			return nil, marshalErr
+		}
+		invoiceNumber := fmt.Sprintf("INV-%s-%s", periodStart.Format("200601"), checkout.ID.String()[:8])
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO billing_invoices
+			  (id, subscription_id, vendor_id, invoice_number, amount, currency, status,
+			   period_start, period_end, due_date, paid_at, payment_reference, line_items, notes, idempotency_key)
+			VALUES ($1,$2,$3,$4,$5,$6,'PAID',$7,$8,$9,$10,$11,$12,$13,$14)`,
+			invoiceID, subscriptionID, checkout.VendorID, invoiceNumber, checkout.Amount, checkout.Currency,
+			periodStart, periodEnd, periodStart, completedAt, providerCollectionID, lineItems,
+			"Verified subscription collection", invoiceKey)
+		if err != nil {
+			return nil, err
+		}
+	} else if err != nil {
+		return nil, err
+	}
+
+	_, err = tx.ExecContext(ctx, `
+		UPDATE subscription_checkouts
+		SET status='SUCCESSFUL', provider_collection_id=$1, provider_status=$2,
+		    subscription_id=$3, invoice_id=$4, completed_at=$5, failure_reason=NULL, updated_at=NOW()
+		WHERE id=$6`, providerCollectionID, providerStatus, subscriptionID, invoiceID, completedAt, checkout.ID)
+	if err != nil {
+		return nil, err
+	}
+	if err := tx.Commit(); err != nil {
+		return nil, err
+	}
+	return r.GetCheckoutByID(ctx, checkout.ID.String())
+}
+
+const checkoutSelect = `
+	SELECT sc.id, sc.vendor_id, sc.tier_id, vt.name, sc.amount, sc.currency, sc.reference,
+	       sc.status, COALESCE(sc.provider_collection_id,''), COALESCE(sc.provider_status,''),
+	       sc.subscription_id, sc.invoice_id, sc.expires_at, sc.completed_at,
+	       COALESCE(sc.failure_reason,''), sc.created_at, sc.updated_at
+	FROM subscription_checkouts sc
+	JOIN vendor_tiers vt ON vt.id=sc.tier_id`
+
+func (r *postgresRepo) scanCheckout(row rowScanner) (*SubscriptionCheckout, error) {
+	checkout := &SubscriptionCheckout{}
+	if err := row.Scan(
+		&checkout.ID, &checkout.VendorID, &checkout.TierID, &checkout.TierName,
+		&checkout.Amount, &checkout.Currency, &checkout.Reference, &checkout.Status,
+		&checkout.ProviderCollectionID, &checkout.ProviderStatus, &checkout.SubscriptionID,
+		&checkout.InvoiceID, &checkout.ExpiresAt, &checkout.CompletedAt, &checkout.FailureReason,
+		&checkout.CreatedAt, &checkout.UpdatedAt,
+	); err != nil {
+		return nil, err
+	}
+	return checkout, nil
+}
+
+func scanTier(row rowScanner) (*VendorTier, error) {
+	tier := &VendorTier{}
+	var featuresJSON []byte
+	if err := row.Scan(&tier.ID, &tier.Name, &tier.MonthlyPrice, &featuresJSON, &tier.CreatedAt, &tier.UpdatedAt); err != nil {
+		return nil, err
+	}
+	var metadata struct {
+		Description  string        `json:"description"`
+		DisplayOrder int           `json:"display_order"`
+		IsAvailable  bool          `json:"is_available"`
+		IsPopular    bool          `json:"is_popular"`
+		Features     []TierFeature `json:"features"`
+	}
+	if len(featuresJSON) > 0 {
+		if err := json.Unmarshal(featuresJSON, &metadata); err != nil {
+			return nil, err
+		}
+	}
+	tier.Description = metadata.Description
+	tier.DisplayOrder = metadata.DisplayOrder
+	tier.IsAvailable = metadata.IsAvailable
+	tier.IsPopular = metadata.IsPopular
+	tier.Features = metadata.Features
+	if tier.Features == nil {
+		tier.Features = []TierFeature{}
+	}
+	return tier, nil
 }
 
 // ── Scanners ──────────────────────────────────────────────────────────────────

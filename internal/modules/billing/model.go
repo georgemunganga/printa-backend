@@ -1,6 +1,7 @@
 package billing
 
 import (
+	"context"
 	"time"
 
 	"github.com/google/uuid"
@@ -26,6 +27,93 @@ type VendorTier struct {
 	Features     []TierFeature `json:"features"`
 	CreatedAt    time.Time     `json:"created_at"`
 	UpdatedAt    time.Time     `json:"updated_at"`
+}
+
+// ── Subscription checkout ────────────────────────────────────────────────────
+
+// CheckoutStatus describes the state of a server-created subscription checkout.
+type CheckoutStatus string
+
+const (
+	CheckoutPending    CheckoutStatus = "PENDING"
+	CheckoutSuccessful CheckoutStatus = "SUCCESSFUL"
+	CheckoutFailed     CheckoutStatus = "FAILED"
+	CheckoutExpired    CheckoutStatus = "EXPIRED"
+)
+
+// SubscriptionCheckout locks all commercially significant data before a payment
+// request is sent. No value from the browser can change its amount, currency, tier, or reference.
+type SubscriptionCheckout struct {
+	ID                   uuid.UUID      `json:"id"`
+	VendorID             uuid.UUID      `json:"vendor_id"`
+	TierID               uuid.UUID      `json:"tier_id"`
+	TierName             string         `json:"tier_name"`
+	Amount               float64        `json:"amount"`
+	Currency             string         `json:"currency"`
+	Reference            string         `json:"reference"`
+	Status               CheckoutStatus `json:"status"`
+	ProviderCollectionID string         `json:"provider_collection_id,omitempty"`
+	ProviderStatus       string         `json:"provider_status,omitempty"`
+	SubscriptionID       *uuid.UUID     `json:"subscription_id,omitempty"`
+	InvoiceID            *uuid.UUID     `json:"invoice_id,omitempty"`
+	ExpiresAt            time.Time      `json:"expires_at"`
+	CompletedAt          *time.Time     `json:"completed_at,omitempty"`
+	FailureReason        string         `json:"failure_reason,omitempty"`
+	CreatedAt            time.Time      `json:"created_at"`
+	UpdatedAt            time.Time      `json:"updated_at"`
+}
+
+// CreateCheckoutRequest contains only a requested tier. The vendor identity,
+// reference, amount, currency, and provider configuration are server-derived.
+type CreateCheckoutRequest struct {
+	TierID string `json:"tier_id"`
+}
+
+// CheckoutSession is a browser-safe record of a server-created checkout. The
+// portal uses the checkout identifier for its next authenticated step; it never
+// receives provider credentials or a hosted-widget configuration.
+type CheckoutSession struct {
+	Checkout *SubscriptionCheckout `json:"checkout"`
+}
+
+// InitiateMobileMoneyCollectionRequest contains only payer-provided information.
+// Amount, currency, and reference remain locked in SubscriptionCheckout.
+type InitiateMobileMoneyCollectionRequest struct {
+	Phone    string `json:"phone"`
+	Operator string `json:"operator"`
+}
+
+// MobileMoneyCollectionRequest is the normalized request issued by the backend
+// to the payment provider after it has loaded the checkout record.
+type MobileMoneyCollectionRequest struct {
+	Amount    float64
+	Currency  string
+	Reference string
+	Phone     string
+	Operator  string
+	Country   string
+	Bearer    string
+}
+
+// ProviderCollection is the normalized read-only collection result returned by
+// the payment provider during initiation or server-side verification.
+type ProviderCollection struct {
+	ID        string
+	Reference string
+	Amount    float64
+	Currency  string
+	Status    string
+	Reason    string
+}
+
+// CollectionVerifier verifies a collection reference using a server-held secret.
+type CollectionVerifier interface {
+	VerifyCollection(ctx context.Context, reference string) (*ProviderCollection, error)
+}
+
+// CollectionInitiator starts a collection using a server-held provider secret.
+type CollectionInitiator interface {
+	InitiateMobileMoneyCollection(ctx context.Context, request MobileMoneyCollectionRequest) (*ProviderCollection, error)
 }
 
 // ── Subscription ──────────────────────────────────────────────────────────────

@@ -1,6 +1,9 @@
 package billing
 
-import "context"
+import (
+	"context"
+	"time"
+)
 
 // Repository defines data access for subscriptions and invoices.
 type Repository interface {
@@ -25,6 +28,16 @@ type Repository interface {
 
 	// Tier catalogue
 	ListTiers(ctx context.Context) ([]*VendorTier, error)
+	GetTierCatalogueEntry(ctx context.Context, tierID string) (*VendorTier, error)
+
+	// Subscription checkout
+	CreateCheckout(ctx context.Context, checkout *SubscriptionCheckout) error
+	GetCheckoutByID(ctx context.Context, id string) (*SubscriptionCheckout, error)
+	GetCheckoutByReference(ctx context.Context, reference string) (*SubscriptionCheckout, error)
+	GetReusablePendingCheckout(ctx context.Context, vendorID, tierID string, now time.Time) (*SubscriptionCheckout, error)
+	RecordCheckoutCollection(ctx context.Context, id, providerCollectionID, providerStatus string) error
+	MarkCheckoutFailed(ctx context.Context, id, providerStatus, reason string) error
+	ActivateCheckout(ctx context.Context, checkoutID, providerCollectionID, providerStatus string, completedAt time.Time) (*SubscriptionCheckout, error)
 
 	// Tier lookup (needed for invoice generation)
 	GetTierByID(ctx context.Context, tierID string) (name string, price float64, err error)

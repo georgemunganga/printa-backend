@@ -40,8 +40,15 @@ func operatingStatusExemptRequest(r *http.Request) bool {
 	}
 
 	// Subscription, invoice, and wallet overview reads are recovery information, not operational
-	// actions. Writes remain gated so a paused vendor cannot use recovery endpoints to bypass controls.
-	return r.Method == http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/billing/") || r.URL.Path == "/api/v1/vendor/wallet")
+	// actions. The narrow checkout writes below are the only payment-recovery writes permitted
+	// while paused; all other billing, wallet, store, and operational writes remain gated.
+	if r.Method == http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/billing/") || r.URL.Path == "/api/v1/vendor/wallet") {
+		return true
+	}
+	if r.Method == http.MethodPost && r.URL.Path == "/api/v1/billing/subscription-checkouts" {
+		return true
+	}
+	return r.Method == http.MethodPost && strings.HasPrefix(r.URL.Path, "/api/v1/billing/subscription-checkouts/") && (strings.HasSuffix(r.URL.Path, "/verify") || strings.HasSuffix(r.URL.Path, "/mobile-money"))
 }
 
 func operatingStatusExemptPath(path string) bool {

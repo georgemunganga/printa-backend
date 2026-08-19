@@ -23,6 +23,10 @@ func NewHandler(service Service, vendorService vendor.Service) *Handler {
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/billing", func(r chi.Router) {
 		r.Get("/tiers", h.listTiers)
+		r.Post("/subscription-checkouts", h.createSubscriptionCheckout)
+		r.Get("/subscription-checkouts/{id}", h.getSubscriptionCheckout)
+		r.Post("/subscription-checkouts/{id}/mobile-money", h.initiateSubscriptionMobileMoneyCollection)
+		r.Post("/subscription-checkouts/{id}/verify", h.verifySubscriptionCheckout)
 		r.Post("/subscriptions", h.createSubscription)
 		r.Get("/subscriptions/vendor/{vendor_id}", h.getSubscription)
 		r.Patch("/subscriptions/vendor/{vendor_id}/tier", h.changeTier)
@@ -45,6 +49,111 @@ func (h *Handler) listTiers(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	respond(w, http.StatusOK, tiers)
+}
+
+func (h *Handler) createSubscriptionCheckout(w http.ResponseWriter, r *http.Request) {
+	var req CreateCheckoutRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid checkout request"})
+		return
+	}
+	vendorID := ""
+	if !h.bindVendorRequest(w, r, &vendorID) {
+		return
+	}
+	session, err := h.service.CreateSubscriptionCheckout(r.Context(), vendorID, req)
+	if err != nil {
+		code := http.StatusInternalServerError
+		switch {
+		case strings.Contains(err.Error(), "required"), strings.Contains(err.Error(), "invalid"), strings.Contains(err.Error(), "not found"):
+			code = http.StatusBadRequest
+		case strings.Contains(err.Error(), "not available"):
+			code = http.StatusUnprocessableEntity
+		case strings.Contains(err.Error(), "not configured"):
+			code = http.StatusServiceUnavailable
+		}
+		respond(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusCreated, session)
+}
+
+func (h *Handler) getSubscriptionCheckout(w http.ResponseWriter, r *http.Request) {
+	vendorID := ""
+	if !h.bindVendorRequest(w, r, &vendorID) {
+		return
+	}
+	checkout, err := h.service.GetSubscriptionCheckout(r.Context(), vendorID, chi.URLParam(r, "id"))
+	if err != nil {
+		code := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "not found") {
+			code = http.StatusNotFound
+		} else if strings.Contains(err.Error(), "not accessible") {
+			code = http.StatusForbidden
+		}
+		respond(w, code, map[string]string{"error": "Unable to load subscription checkout"})
+		return
+	}
+	respond(w, http.StatusOK, checkout)
+}
+
+func (h *Handler) initiateSubscriptionMobileMoneyCollection(w http.ResponseWriter, r *http.Request) {
+	var req InitiateMobileMoneyCollectionRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid mobile-money collection request"})
+		return
+	}
+	vendorID := ""
+	if !h.bindVendorRequest(w, r, &vendorID) {
+		return
+	}
+	checkout, err := h.service.InitiateSubscriptionMobileMoneyCollection(r.Context(), vendorID, chi.URLParam(r, "id"), req)
+	if err != nil {
+		code := http.StatusInternalServerError
+		switch {
+		case strings.Contains(err.Error(), "not found"):
+			code = http.StatusNotFound
+		case strings.Contains(err.Error(), "not accessible"):
+			code = http.StatusForbidden
+		case strings.Contains(err.Error(), "valid mobile-money"), strings.Contains(err.Error(), "operator must"):
+			code = http.StatusBadRequest
+		case strings.Contains(err.Error(), "expired"):
+			code = http.StatusGone
+		case strings.Contains(err.Error(), "did not match"):
+			code = http.StatusUnprocessableEntity
+		case strings.Contains(err.Error(), "not configured"):
+			code = http.StatusServiceUnavailable
+		}
+		respond(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, checkout)
+}
+
+func (h *Handler) verifySubscriptionCheckout(w http.ResponseWriter, r *http.Request) {
+	vendorID := ""
+	if !h.bindVendorRequest(w, r, &vendorID) {
+		return
+	}
+	checkout, err := h.service.VerifySubscriptionCheckout(r.Context(), vendorID, chi.URLParam(r, "id"))
+	if err != nil {
+		code := http.StatusInternalServerError
+		switch {
+		case strings.Contains(err.Error(), "not found"):
+			code = http.StatusNotFound
+		case strings.Contains(err.Error(), "not accessible"):
+			code = http.StatusForbidden
+		case strings.Contains(err.Error(), "expired"):
+			code = http.StatusGone
+		case strings.Contains(err.Error(), "amount or currency"), strings.Contains(err.Error(), "did not match"):
+			code = http.StatusUnprocessableEntity
+		case strings.Contains(err.Error(), "not configured"):
+			code = http.StatusServiceUnavailable
+		}
+		respond(w, code, map[string]string{"error": "Unable to verify subscription payment"})
+		return
+	}
+	respond(w, http.StatusOK, checkout)
 }
 
 func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {

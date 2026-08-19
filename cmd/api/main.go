@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"database/sql"
 	"encoding/json"
 	"fmt"
@@ -115,7 +116,14 @@ func main() {
 	posService := pos.NewService(posRepo)
 
 	billingRepo := billing.NewPostgresRepository(db)
-	billingService := billing.NewService(billingRepo)
+	lencoCollectionClient := billing.NewLencoCollectionClient(
+		os.Getenv("LENCO_API_BASE_URL"),
+		os.Getenv("LENCO_SECRET_KEY"),
+	)
+	billingService := billing.NewService(billingRepo, billing.WithCheckoutConfig(billing.CheckoutConfig{
+		Verifier:  lencoCollectionClient,
+		Initiator: lencoCollectionClient,
+	}))
 
 	adminRepo := admin.NewPostgresRepository(db)
 	adminService := admin.NewService(adminRepo)
@@ -184,9 +192,12 @@ func main() {
 	delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterStorefrontRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
 	payment.NewHandler(paymentService, vendorService, orderService).RegisterWebhookRoutes(router)
-	// Signed collection-provider callback receiver. It persists verified events only;
-	// wallet settlement posting remains behind the ledger implementation boundary.
-	lenco.NewHandlerFromEnv(db).RegisterRoutes(router)
+	// Signed collection-provider callback receiver. Subscription activation still
+	// re-queries the provider and validates the server-locked checkout amount.
+	lenco.NewHandlerFromEnv(db, func(ctx context.Context, reference string) error {
+		_, err := billingService.VerifySubscriptionCheckoutByReference(ctx, reference)
+		return err
+	}).RegisterRoutes(router)
 
 	// ── PROTECTED ROUTES (JWT required) ─────────────────────
 	router.Group(func(r chi.Router) {

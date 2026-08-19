@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"math"
 	"math/rand"
 	"strings"
 	"time"
@@ -15,6 +16,13 @@ import (
 type Service interface {
 	// Tier catalogue
 	ListTiers(ctx context.Context) ([]*VendorTier, error)
+
+	// Subscription checkout
+	CreateSubscriptionCheckout(ctx context.Context, vendorID string, req CreateCheckoutRequest) (*CheckoutSession, error)
+	GetSubscriptionCheckout(ctx context.Context, vendorID, checkoutID string) (*SubscriptionCheckout, error)
+	InitiateSubscriptionMobileMoneyCollection(ctx context.Context, vendorID, checkoutID string, req InitiateMobileMoneyCollectionRequest) (*SubscriptionCheckout, error)
+	VerifySubscriptionCheckout(ctx context.Context, vendorID, checkoutID string) (*SubscriptionCheckout, error)
+	VerifySubscriptionCheckoutByReference(ctx context.Context, reference string) (*SubscriptionCheckout, error)
 
 	// Subscription
 	CreateSubscription(ctx context.Context, req CreateSubscriptionRequest) (*VendorSubscription, error)
@@ -32,12 +40,192 @@ type Service interface {
 	VoidInvoice(ctx context.Context, id string) (*BillingInvoice, error)
 }
 
-type service struct{ repo Repository }
+type CheckoutConfig struct {
+	Verifier  CollectionVerifier
+	Initiator CollectionInitiator
+}
 
-func NewService(repo Repository) Service { return &service{repo: repo} }
+type ServiceOption func(*service)
+
+// WithCheckoutConfig enables server-mediated subscription collection. Provider
+// credentials remain inside the verifier and initiator implementations.
+func WithCheckoutConfig(config CheckoutConfig) ServiceOption {
+	return func(s *service) {
+		s.checkout = config
+	}
+}
+
+type service struct {
+	repo     Repository
+	checkout CheckoutConfig
+}
+
+func NewService(repo Repository, options ...ServiceOption) Service {
+	s := &service{repo: repo}
+	for _, option := range options {
+		option(s)
+	}
+	return s
+}
 
 func (s *service) ListTiers(ctx context.Context) ([]*VendorTier, error) {
 	return s.repo.ListTiers(ctx)
+}
+
+// ── Subscription checkout ────────────────────────────────────────────────────
+
+func (s *service) CreateSubscriptionCheckout(ctx context.Context, vendorID string, req CreateCheckoutRequest) (*CheckoutSession, error) {
+	if strings.TrimSpace(vendorID) == "" {
+		return nil, fmt.Errorf("vendor_id is required")
+	}
+	if strings.TrimSpace(req.TierID) == "" {
+		return nil, fmt.Errorf("tier_id is required")
+	}
+	if s.checkout.Verifier == nil || s.checkout.Initiator == nil {
+		return nil, fmt.Errorf("subscription payment collection is not configured")
+	}
+	vendorUUID, err := uuid.Parse(vendorID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid vendor_id")
+	}
+	tier, err := s.repo.GetTierCatalogueEntry(ctx, req.TierID)
+	if err != nil {
+		return nil, fmt.Errorf("subscription tier not found")
+	}
+	if !tier.IsAvailable || tier.MonthlyPrice <= 0 {
+		return nil, fmt.Errorf("subscription tier is not available for checkout")
+	}
+
+	now := time.Now().UTC()
+	if existing, lookupErr := s.repo.GetReusablePendingCheckout(ctx, vendorID, req.TierID, now); lookupErr == nil && existing != nil {
+		return &CheckoutSession{Checkout: existing}, nil
+	} else if lookupErr != nil && lookupErr != sql.ErrNoRows {
+		return nil, lookupErr
+	}
+
+	checkoutID := uuid.New()
+	checkout := &SubscriptionCheckout{
+		ID: checkoutID, VendorID: vendorUUID, TierID: tier.ID, TierName: tier.Name,
+		Amount: tier.MonthlyPrice, Currency: "ZMW", Reference: "SUB-" + checkoutID.String(),
+		Status: CheckoutPending, ExpiresAt: now.Add(30 * time.Minute),
+	}
+	if err := s.repo.CreateCheckout(ctx, checkout); err != nil {
+		return nil, err
+	}
+	created, err := s.repo.GetCheckoutByID(ctx, checkoutID.String())
+	if err != nil {
+		return nil, err
+	}
+	return &CheckoutSession{Checkout: created}, nil
+}
+
+func (s *service) GetSubscriptionCheckout(ctx context.Context, vendorID, checkoutID string) (*SubscriptionCheckout, error) {
+	checkout, err := s.repo.GetCheckoutByID(ctx, checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	if checkout.VendorID.String() != vendorID {
+		return nil, fmt.Errorf("checkout is not accessible to this vendor")
+	}
+	return checkout, nil
+}
+
+func (s *service) InitiateSubscriptionMobileMoneyCollection(ctx context.Context, vendorID, checkoutID string, req InitiateMobileMoneyCollectionRequest) (*SubscriptionCheckout, error) {
+	checkout, err := s.GetSubscriptionCheckout(ctx, vendorID, checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	if checkout.Status != CheckoutPending {
+		return checkout, nil
+	}
+	if !checkout.ExpiresAt.After(time.Now().UTC()) {
+		if err := s.repo.MarkCheckoutFailed(ctx, checkout.ID.String(), "EXPIRED", "Checkout expired before collection could be initiated"); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("checkout has expired")
+	}
+	if s.checkout.Initiator == nil {
+		return nil, fmt.Errorf("subscription payment collection is not configured")
+	}
+	if checkout.ProviderCollectionID != "" {
+		return checkout, nil
+	}
+
+	phone := strings.NewReplacer(" ", "", "-", "", "(", "", ")", "").Replace(strings.TrimSpace(req.Phone))
+	phone = strings.TrimPrefix(phone, "+")
+	if len(phone) < 9 || len(phone) > 15 || strings.Trim(phone, "0123456789") != "" {
+		return nil, fmt.Errorf("a valid mobile-money phone number is required")
+	}
+	operator := strings.ToLower(strings.TrimSpace(req.Operator))
+	if operator != "airtel" && operator != "mtn" && operator != "zamtel" {
+		return nil, fmt.Errorf("mobile-money operator must be airtel, mtn, or zamtel")
+	}
+
+	collection, err := s.checkout.Initiator.InitiateMobileMoneyCollection(ctx, MobileMoneyCollectionRequest{
+		Amount: checkout.Amount, Currency: checkout.Currency, Reference: checkout.Reference,
+		Phone: phone, Operator: operator, Country: "zm", Bearer: "merchant",
+	})
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil || collection.ID == "" || collection.Reference != checkout.Reference || math.Abs(collection.Amount-checkout.Amount) > 0.005 || !strings.EqualFold(collection.Currency, checkout.Currency) {
+		return nil, fmt.Errorf("payment collection did not match checkout")
+	}
+	if err := s.repo.RecordCheckoutCollection(ctx, checkout.ID.String(), collection.ID, collection.Status); err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(collection.Status, "successful") || strings.EqualFold(collection.Status, "failed") {
+		return s.VerifySubscriptionCheckout(ctx, vendorID, checkoutID)
+	}
+	return s.GetSubscriptionCheckout(ctx, vendorID, checkoutID)
+}
+
+func (s *service) VerifySubscriptionCheckoutByReference(ctx context.Context, reference string) (*SubscriptionCheckout, error) {
+	checkout, err := s.repo.GetCheckoutByReference(ctx, reference)
+	if err != nil {
+		return nil, err
+	}
+	return s.VerifySubscriptionCheckout(ctx, checkout.VendorID.String(), checkout.ID.String())
+}
+
+func (s *service) VerifySubscriptionCheckout(ctx context.Context, vendorID, checkoutID string) (*SubscriptionCheckout, error) {
+	checkout, err := s.GetSubscriptionCheckout(ctx, vendorID, checkoutID)
+	if err != nil {
+		return nil, err
+	}
+	if checkout.Status == CheckoutSuccessful || checkout.Status == CheckoutFailed || checkout.Status == CheckoutExpired {
+		return checkout, nil
+	}
+	if !checkout.ExpiresAt.After(time.Now().UTC()) {
+		if err := s.repo.MarkCheckoutFailed(ctx, checkoutID, "EXPIRED", "Checkout expired before payment could be verified"); err != nil {
+			return nil, err
+		}
+		return nil, fmt.Errorf("checkout has expired")
+	}
+	if s.checkout.Verifier == nil {
+		return nil, fmt.Errorf("subscription payment collection is not configured")
+	}
+	collection, err := s.checkout.Verifier.VerifyCollection(ctx, checkout.Reference)
+	if err != nil {
+		return nil, err
+	}
+	if collection == nil || collection.Reference != checkout.Reference || collection.ID == "" {
+		return nil, fmt.Errorf("payment verification did not match checkout reference")
+	}
+	if math.Abs(collection.Amount-checkout.Amount) > 0.005 || !strings.EqualFold(collection.Currency, checkout.Currency) {
+		return nil, fmt.Errorf("payment verification amount or currency did not match checkout")
+	}
+	switch strings.ToLower(collection.Status) {
+	case "successful":
+		return s.repo.ActivateCheckout(ctx, checkout.ID.String(), collection.ID, collection.Status, time.Now().UTC())
+	case "failed":
+		if err := s.repo.MarkCheckoutFailed(ctx, checkout.ID.String(), collection.Status, collection.Reason); err != nil {
+			return nil, err
+		}
+		return s.repo.GetCheckoutByID(ctx, checkout.ID.String())
+	default:
+		return checkout, nil
+	}
 }
 
 // ── Subscription ──────────────────────────────────────────────────────────────
