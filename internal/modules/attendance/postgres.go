@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 )
@@ -16,6 +17,9 @@ var (
 
 type Repository interface {
 	SetPIN(ctx context.Context, storeID, userID string, pinHash string) error
+	GetStoreOwnerContact(ctx context.Context, storeID string) (*ownerContact, error)
+	CreatePINReset(ctx context.Context, reset *PINResetRecord) error
+	ConsumePINResetAndSetOwnerPIN(ctx context.Context, tokenHash, pinHash string, now time.Time) error
 	GetPINHash(ctx context.Context, storeID, userID string) (string, error)
 	GetLastEventType(ctx context.Context, storeID, userID string) (*EventType, error)
 	CreateEvent(ctx context.Context, event *AttendanceEvent) error
@@ -62,6 +66,81 @@ func (r *postgresRepository) SetPIN(ctx context.Context, storeID, userID string,
 		return ErrNotAssigned
 	}
 	return nil
+}
+
+func (r *postgresRepository) GetStoreOwnerContact(ctx context.Context, storeID string) (*ownerContact, error) {
+	storeUUID, err := uuid.Parse(storeID)
+	if err != nil {
+		return nil, fmt.Errorf("invalid store ID: %w", err)
+	}
+	contact := &ownerContact{StoreID: storeUUID}
+	err = r.db.QueryRowContext(ctx, `
+		SELECT v.owner_id, u.email
+		FROM stores s
+		JOIN vendors v ON v.id = s.vendor_id
+		JOIN users u ON u.id = v.owner_id
+		WHERE s.id = $1`, storeUUID).Scan(&contact.OwnerID, &contact.Email)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, errors.New("store not found")
+	}
+	if err != nil {
+		return nil, err
+	}
+	return contact, nil
+}
+
+func (r *postgresRepository) CreatePINReset(ctx context.Context, reset *PINResetRecord) error {
+	_, err := r.db.ExecContext(ctx, `
+		UPDATE store_staff_pin_resets
+		SET used_at = NOW()
+		WHERE store_id = $1 AND owner_id = $2 AND used_at IS NULL`, reset.StoreID, reset.OwnerID)
+	if err != nil {
+		return err
+	}
+	_, err = r.db.ExecContext(ctx, `
+		INSERT INTO store_staff_pin_resets (id, store_id, owner_id, token_hash, expires_at)
+		VALUES ($1, $2, $3, $4, $5)`, reset.ID, reset.StoreID, reset.OwnerID, reset.TokenHash, reset.ExpiresAt)
+	return err
+}
+
+func (r *postgresRepository) ConsumePINResetAndSetOwnerPIN(ctx context.Context, tokenHash, pinHash string, now time.Time) error {
+	tx, err := r.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+
+	var reset PINResetRecord
+	err = tx.QueryRowContext(ctx, `
+		SELECT id, store_id, owner_id, token_hash, expires_at
+		FROM store_staff_pin_resets
+		WHERE token_hash = $1 AND used_at IS NULL AND expires_at > $2
+		FOR UPDATE`, tokenHash, now).Scan(&reset.ID, &reset.StoreID, &reset.OwnerID, &reset.TokenHash, &reset.ExpiresAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrPINResetInvalid
+	}
+	if err != nil {
+		return err
+	}
+
+	result, err := tx.ExecContext(ctx, `
+		UPDATE store_staff
+		SET pin_hash = $3, pin_updated_at = NOW(), updated_at = NOW()
+		WHERE store_id = $1 AND user_id = $2`, reset.StoreID, reset.OwnerID, pinHash)
+	if err != nil {
+		return err
+	}
+	changed, err := result.RowsAffected()
+	if err != nil {
+		return err
+	}
+	if changed != 1 {
+		return ErrNotAssigned
+	}
+	if _, err := tx.ExecContext(ctx, `UPDATE store_staff_pin_resets SET used_at = $2 WHERE id = $1`, reset.ID, now); err != nil {
+		return err
+	}
+	return tx.Commit()
 }
 
 func (r *postgresRepository) GetPINHash(ctx context.Context, storeID, userID string) (string, error) {

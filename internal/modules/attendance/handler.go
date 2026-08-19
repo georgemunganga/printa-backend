@@ -22,9 +22,14 @@ func NewHandler(service Service, inventoryService inventory.Service, vendorServi
 	return &Handler{service: service, inventory: inventoryService, vendorService: vendorService}
 }
 
+func (h *Handler) RegisterPublicRoutes(r chi.Router) {
+	r.Post("/api/v1/attendance/owner-pin/reset-confirm", h.confirmOwnerPINReset)
+}
+
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/attendance", func(r chi.Router) {
 		r.Put("/stores/{store_id}/staff/{user_id}/pin", h.setPIN)
+		r.Post("/stores/{store_id}/owner-pin/reset-request", h.requestOwnerPINReset)
 		r.Post("/stores/{store_id}/clock", h.clock)
 		r.Get("/stores/{store_id}/events", h.listRecent)
 	})
@@ -41,6 +46,31 @@ func (h *Handler) setPIN(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	if err := h.service.SetPIN(r.Context(), storeID, chi.URLParam(r, "user_id"), req.PIN); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	respond(w, http.StatusNoContent, nil)
+}
+
+func (h *Handler) requestOwnerPINReset(w http.ResponseWriter, r *http.Request) {
+	storeID := chi.URLParam(r, "store_id")
+	if !h.canRequestOwnerPINReset(w, r, storeID) {
+		return
+	}
+	if err := h.service.RequestOwnerPINReset(r.Context(), storeID); err != nil {
+		handleServiceError(w, err)
+		return
+	}
+	respond(w, http.StatusNoContent, nil)
+}
+
+func (h *Handler) confirmOwnerPINReset(w http.ResponseWriter, r *http.Request) {
+	var req ConfirmOwnerPINResetRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if err := h.service.ConfirmOwnerPINReset(r.Context(), req.Token, req.PIN); err != nil {
 		handleServiceError(w, err)
 		return
 	}
@@ -79,6 +109,27 @@ func (h *Handler) listRecent(w http.ResponseWriter, r *http.Request) {
 		events = make([]*AttendanceEvent, 0)
 	}
 	respond(w, http.StatusOK, events)
+}
+
+func (h *Handler) canRequestOwnerPINReset(w http.ResponseWriter, r *http.Request, storeID string) bool {
+	if middleware.GetRole(r) == middleware.RoleAdmin {
+		return true
+	}
+	if middleware.GetRole(r) != middleware.RoleVendor {
+		respond(w, http.StatusForbidden, map[string]string{"error": "only the store owner can request a staff PIN reset email"})
+		return false
+	}
+	store, err := h.inventory.GetStore(r.Context(), storeID)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "store not found"})
+		return false
+	}
+	vendorProfile, err := h.vendorService.GetVendor(r.Context(), middleware.GetUserID(r))
+	if err == nil && vendorProfile.ID == store.VendorID {
+		return true
+	}
+	respond(w, http.StatusForbidden, map[string]string{"error": "only the store owner can request a staff PIN reset email"})
+	return false
 }
 
 func (h *Handler) canClock(w http.ResponseWriter, r *http.Request, storeID, subjectUserID string) bool {
@@ -147,6 +198,10 @@ func handleServiceError(w http.ResponseWriter, err error) {
 		respond(w, http.StatusNotFound, map[string]string{"error": "staff member is not assigned to this store"})
 	case errors.Is(err, ErrPINNotConfigured):
 		respond(w, http.StatusConflict, map[string]string{"error": "staff PIN has not been configured"})
+	case errors.Is(err, ErrPINResetInvalid):
+		respond(w, http.StatusBadRequest, map[string]string{"error": "staff PIN reset link is invalid, expired, or has already been used"})
+	case errors.Is(err, ErrPINResetDelivery):
+		respond(w, http.StatusServiceUnavailable, map[string]string{"error": "unable to send the staff PIN reset email"})
 	case strings.Contains(err.Error(), "invalid staff PIN"):
 		respond(w, http.StatusUnauthorized, map[string]string{"error": "invalid staff PIN"})
 	default:

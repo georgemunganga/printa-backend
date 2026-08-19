@@ -40,10 +40,12 @@ type FirstStore struct {
 // during onboarding. A complete value is required when atomic onboarding is
 // requested.
 type FirstStoreInput struct {
-	Name      string
-	Address   string
-	City      string
-	Country   string
-	Latitude  *float64
-	Longitude *float64
+	Name         string
+	Address      string
+	City         string
+	Country      string
+	Latitude     *float64
+	Longitude    *float64
+	OwnerPIN     string
+	OwnerPINHash string
 }

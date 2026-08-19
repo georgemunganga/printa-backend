@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"errors"
+	"fmt"
 
 	"github.com/google/uuid"
 )
@@ -148,6 +149,23 @@ func (r *postgresRepository) EnsureVendorWithFirstStore(ctx context.Context, can
 	}
 	if err != nil {
 		return nil, err
+	}
+
+	if firstStore.OwnerPINHash != "" {
+		result, err := tx.ExecContext(ctx, `
+			UPDATE store_staff
+			SET pin_hash = $3, pin_updated_at = NOW(), updated_at = NOW()
+			WHERE store_id = $1 AND user_id = $2`, store.ID, vendorRecord.OwnerID, firstStore.OwnerPINHash)
+		if err != nil {
+			return nil, err
+		}
+		updated, err := result.RowsAffected()
+		if err != nil {
+			return nil, err
+		}
+		if updated != 1 {
+			return nil, fmt.Errorf("owner staff assignment was not created for the first store")
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

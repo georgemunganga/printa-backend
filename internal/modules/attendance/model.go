@@ -30,6 +30,13 @@ type SetPINRequest struct {
 	PIN string `json:"pin"`
 }
 
+// ConfirmOwnerPINResetRequest is accepted only with a single-use reset token
+// delivered to the store owner's verified email address.
+type ConfirmOwnerPINResetRequest struct {
+	Token string `json:"token"`
+	PIN   string `json:"pin"`
+}
+
 // ClockRequest verifies the selected assigned staff member's PIN server-side.
 type ClockRequest struct {
 	UserID string `json:"user_id"`

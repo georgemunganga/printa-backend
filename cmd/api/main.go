@@ -98,7 +98,6 @@ func main() {
 	zoneService := delivery.NewZoneService(zoneRepo)
 
 	attendanceRepo := attendance.NewPostgresRepository(db)
-	attendanceService := attendance.NewService(attendanceRepo)
 
 	conversationRepo := conversation.NewPostgresRepository(db)
 	conversationService := conversation.NewService(conversationRepo)
@@ -144,6 +143,8 @@ func main() {
 		auth.NewPostgresOAuthRepository(db),
 		commsService,
 	)
+	attendanceService := attendance.NewService(attendanceRepo, attendance.WithPINResetMailer(commsService, os.Getenv("VENDOR_PORTAL_URL")))
+	attendanceHandler := attendance.NewHandler(attendanceService, inventoryService, vendorService)
 
 	paymentGateways := payment.GatewayRegistry{
 		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(
@@ -187,6 +188,9 @@ func main() {
 	user.NewHandler(userService).RegisterPublicRoutes(router)
 	// Login
 	auth.NewHandler(authService).RegisterRoutes(router)
+	// Owner email-link confirmation for staff PIN resets uses a high-entropy,
+	// single-use token and does not require an existing browser session.
+	attendanceHandler.RegisterPublicRoutes(router)
 	// Customer storefront browsing
 	inventory.NewHandler(inventoryService, vendorService, userService).RegisterStorefrontRoutes(router)
 	delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterStorefrontRoutes(router)
@@ -243,7 +247,7 @@ func main() {
 		production.NewHandler(productionService, inventoryService, vendorService).RegisterRoutes(r)
 
 		// Staff attendance
-		attendance.NewHandler(attendanceService, inventoryService, vendorService).RegisterRoutes(r)
+		attendanceHandler.RegisterRoutes(r)
 
 		// POS
 		pos.NewHandler(posService, inventoryService, vendorService, orderService).RegisterRoutes(r)

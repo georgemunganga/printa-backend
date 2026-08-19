@@ -11,16 +11,24 @@ import (
 
 type Service interface {
 	SetPIN(ctx context.Context, storeID, userID, pin string) error
+	RequestOwnerPINReset(ctx context.Context, storeID string) error
+	ConfirmOwnerPINReset(ctx context.Context, token, pin string) error
 	Clock(ctx context.Context, storeID, userID, pin, createdBy string) (*ClockResponse, error)
 	ListRecent(ctx context.Context, storeID string, limit int) ([]*AttendanceEvent, error)
 }
 
 type service struct {
-	repo Repository
+	repo        Repository
+	resetMailer PINResetMailer
+	portalURL   string
 }
 
-func NewService(repo Repository) Service {
-	return &service{repo: repo}
+func NewService(repo Repository, options ...ServiceOption) Service {
+	svc := &service{repo: repo}
+	for _, option := range options {
+		option(svc)
+	}
+	return svc
 }
 
 func (s *service) SetPIN(ctx context.Context, storeID, userID, pin string) error {
