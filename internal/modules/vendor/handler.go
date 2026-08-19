@@ -3,6 +3,7 @@ package vendor
 import (
 	"encoding/json"
 	"net/http"
+	"strings"
 
 	"github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/georgemunganga/printa-backend/internal/modules/policyconsent"
@@ -25,14 +26,24 @@ func (h *Handler) RegisterRoutes(router chi.Router) {
 	})
 }
 
-func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
-	type request struct {
-		OwnerID      string `json:"owner_id"`
-		BusinessName string `json:"business_name"`
-		TaxID        string `json:"tax_id"`
-	}
+type onboardVendorRequest struct {
+	OwnerID      string `json:"owner_id"`
+	BusinessName string `json:"business_name"`
+	TaxID        string `json:"tax_id"`
 
-	var req request
+	// The wizard supplies these fields when it is completing initial vendor
+	// onboarding. They are intentionally optional so the established profile-only
+	// administrative flow remains backward compatible.
+	StoreName      string   `json:"store_name"`
+	StoreAddress   string   `json:"store_address"`
+	StoreCity      string   `json:"store_city"`
+	StoreCountry   string   `json:"store_country"`
+	StoreLatitude  *float64 `json:"store_latitude"`
+	StoreLongitude *float64 `json:"store_longitude"`
+}
+
+func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
+	var req onboardVendorRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
@@ -56,19 +67,31 @@ func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vendor, err := h.service.OnboardVendor(r.Context(), req.OwnerID, req.BusinessName, req.TaxID)
+	var vendorRecord *Vendor
+	if strings.TrimSpace(req.StoreName) != "" {
+		vendorRecord, err = h.service.OnboardVendorWithFirstStore(r.Context(), req.OwnerID, req.BusinessName, req.TaxID, FirstStoreInput{
+			Name:      req.StoreName,
+			Address:   req.StoreAddress,
+			City:      req.StoreCity,
+			Country:   req.StoreCountry,
+			Latitude:  req.StoreLatitude,
+			Longitude: req.StoreLongitude,
+		})
+	} else {
+		vendorRecord, err = h.service.OnboardVendor(r.Context(), req.OwnerID, req.BusinessName, req.TaxID)
+	}
 	if err != nil {
-		http.Error(w, err.Error(), http.StatusInternalServerError)
+		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	if err := h.consentService.AttachAcceptedPoliciesToVendor(r.Context(), req.OwnerID, vendor.ID.String(), policyconsent.RequestIP(r), r.UserAgent()); err != nil {
-		http.Error(w, "vendor profile was created but consent evidence could not be attached; retry onboarding", http.StatusInternalServerError)
+	if err := h.consentService.AttachAcceptedPoliciesToVendor(r.Context(), req.OwnerID, vendorRecord.ID.String(), policyconsent.RequestIP(r), r.UserAgent()); err != nil {
+		http.Error(w, "vendor onboarding could not record policy evidence; retry the request", http.StatusInternalServerError)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
-	json.NewEncoder(w).Encode(vendor)
+	json.NewEncoder(w).Encode(vendorRecord)
 }
 
 func (h *Handler) getVendor(w http.ResponseWriter, r *http.Request) {
@@ -85,12 +108,12 @@ func (h *Handler) getVendor(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	vendor, err := h.service.GetVendor(r.Context(), ownerID)
+	vendorRecord, err := h.service.GetVendor(r.Context(), ownerID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusNotFound)
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/json")
-	json.NewEncoder(w).Encode(vendor)
+	json.NewEncoder(w).Encode(vendorRecord)
 }
