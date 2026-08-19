@@ -39,9 +39,9 @@ func operatingStatusExemptRequest(r *http.Request) bool {
 		return true
 	}
 
-	// Subscription and invoice reads are recovery information, not operational actions.
-	// Writes remain gated so a paused vendor cannot use billing endpoints to bypass controls.
-	return r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/billing/")
+	// Subscription, invoice, and wallet overview reads are recovery information, not operational
+	// actions. Writes remain gated so a paused vendor cannot use recovery endpoints to bypass controls.
+	return r.Method == http.MethodGet && (strings.HasPrefix(r.URL.Path, "/api/v1/billing/") || r.URL.Path == "/api/v1/vendor/wallet")
 }
 
 func operatingStatusExemptPath(path string) bool {

@@ -16,8 +16,10 @@ func TestOperatingStatusExemptRequestAllowsOnlyReadOnlyBillingRecovery(t *testin
 		{name: "tier catalogue read", method: http.MethodGet, path: "/api/v1/billing/tiers", want: true},
 		{name: "subscription read", method: http.MethodGet, path: "/api/v1/billing/subscriptions/vendor/vendor-1", want: true},
 		{name: "invoice history read", method: http.MethodGet, path: "/api/v1/billing/invoices/vendor/vendor-1", want: true},
+		{name: "wallet overview read", method: http.MethodGet, path: "/api/v1/vendor/wallet", want: true},
 		{name: "subscription creation remains locked", method: http.MethodPost, path: "/api/v1/billing/subscriptions", want: false},
 		{name: "tier change remains locked", method: http.MethodPatch, path: "/api/v1/billing/subscriptions/vendor/vendor-1/tier", want: false},
+		{name: "wallet write remains locked", method: http.MethodPost, path: "/api/v1/vendor/wallet", want: false},
 	}
 
 	for _, test := range tests {
