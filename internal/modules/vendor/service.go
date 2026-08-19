@@ -6,7 +6,6 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
-	"golang.org/x/crypto/bcrypt"
 )
 
 type Service interface {
@@ -77,15 +76,6 @@ func (s *service) OnboardVendorWithFirstStore(ctx context.Context, ownerID, busi
 	if err := validateFirstStoreCoordinates(firstStore.Latitude, firstStore.Longitude); err != nil {
 		return nil, err
 	}
-	if !isValidStaffPIN(firstStore.OwnerPIN) {
-		return nil, fmt.Errorf("staff_pin must contain 4 to 6 digits for first-store onboarding")
-	}
-	pinHash, err := bcrypt.GenerateFromPassword([]byte(firstStore.OwnerPIN), bcrypt.DefaultCost)
-	if err != nil {
-		return nil, fmt.Errorf("hash initial staff PIN: %w", err)
-	}
-	firstStore.OwnerPIN = ""
-	firstStore.OwnerPINHash = string(pinHash)
 
 	parsedOwnerID, err := uuid.Parse(ownerID)
 	if err != nil {
@@ -108,18 +98,6 @@ func (s *service) OnboardVendorWithFirstStore(ctx context.Context, ownerID, busi
 
 func (s *service) GetVendor(ctx context.Context, ownerID string) (*Vendor, error) {
 	return s.vendorRepo.GetVendorByOwnerID(ctx, ownerID)
-}
-
-func isValidStaffPIN(pin string) bool {
-	if len(pin) < 4 || len(pin) > 6 {
-		return false
-	}
-	for _, char := range pin {
-		if char < '0' || char > '9' {
-			return false
-		}
-	}
-	return true
 }
 
 func validateFirstStoreCoordinates(latitude, longitude *float64) error {

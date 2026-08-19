@@ -40,7 +40,6 @@ type onboardVendorRequest struct {
 	StoreCountry   string   `json:"store_country"`
 	StoreLatitude  *float64 `json:"store_latitude"`
 	StoreLongitude *float64 `json:"store_longitude"`
-	StaffPIN       string   `json:"staff_pin"`
 }
 
 func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
@@ -77,7 +76,6 @@ func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
 			Country:   req.StoreCountry,
 			Latitude:  req.StoreLatitude,
 			Longitude: req.StoreLongitude,
-			OwnerPIN:  req.StaffPIN,
 		})
 	} else {
 		vendorRecord, err = h.service.OnboardVendor(r.Context(), req.OwnerID, req.BusinessName, req.TaxID)
