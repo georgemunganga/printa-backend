@@ -22,6 +22,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/conversation"
 	"github.com/georgemunganga/printa-backend/internal/modules/delivery"
 	"github.com/georgemunganga/printa-backend/internal/modules/inventory"
+	"github.com/georgemunganga/printa-backend/internal/modules/lenco"
 	"github.com/georgemunganga/printa-backend/internal/modules/notification"
 	"github.com/georgemunganga/printa-backend/internal/modules/operatinghours"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
@@ -171,6 +172,9 @@ func main() {
 	delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterStorefrontRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
 	payment.NewHandler(paymentService, vendorService, orderService).RegisterWebhookRoutes(router)
+	// Signed collection-provider callback receiver. It persists verified events only;
+	// wallet settlement posting remains behind the ledger implementation boundary.
+	lenco.NewHandlerFromEnv(db).RegisterRoutes(router)
 
 	// ── PROTECTED ROUTES (JWT required) ─────────────────────
 	router.Group(func(r chi.Router) {
