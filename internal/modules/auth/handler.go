@@ -2,9 +2,11 @@ package auth
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/url"
 
+	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -55,6 +57,13 @@ func (h *Handler) requestOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.service.RequestOTP(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, user.ErrEmailAlreadyRegistered) {
+			respond(w, http.StatusConflict, map[string]string{
+				"error": "An account already exists for this email. Log in to continue.",
+				"code":  "ACCOUNT_EXISTS",
+			})
+			return
+		}
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
@@ -69,6 +78,13 @@ func (h *Handler) verifyOTP(w http.ResponseWriter, r *http.Request) {
 	}
 	resp, err := h.service.VerifyOTP(r.Context(), req)
 	if err != nil {
+		if errors.Is(err, user.ErrEmailAlreadyRegistered) {
+			respond(w, http.StatusConflict, map[string]string{
+				"error": "An account already exists for this email. Log in to continue.",
+				"code":  "ACCOUNT_EXISTS",
+			})
+			return
+		}
 		respond(w, http.StatusUnauthorized, map[string]string{"error": err.Error()})
 		return
 	}

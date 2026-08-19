@@ -2,6 +2,7 @@ package user
 
 import (
 	"encoding/json"
+	"errors"
 	"net/http"
 
 	"github.com/georgemunganga/printa-backend/internal/middleware"
@@ -52,6 +53,13 @@ func (h *Handler) register(w http.ResponseWriter, r *http.Request) {
 	}
 	u, err := h.service.RegisterUser(r.Context(), req.Email, req.Password, req.FirstName, req.LastName, req.Role)
 	if err != nil {
+		if errors.Is(err, ErrEmailAlreadyRegistered) {
+			respond(w, http.StatusConflict, map[string]string{
+				"error": "An account already exists for this email. Log in to continue.",
+				"code":  "ACCOUNT_EXISTS",
+			})
+			return
+		}
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}

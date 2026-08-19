@@ -6,8 +6,13 @@ import (
 	"strings"
 
 	"github.com/google/uuid"
+	"github.com/lib/pq"
 	"golang.org/x/crypto/bcrypt"
 )
+
+// ErrEmailAlreadyRegistered is safe to expose to account-creation clients.
+// It deliberately replaces PostgreSQL’s raw duplicate-key message.
+var ErrEmailAlreadyRegistered = errors.New("an account already exists for this email")
 
 type service struct {
 	repo Repository
@@ -19,6 +24,7 @@ func NewService(repo Repository) Service {
 }
 
 func (s *service) RegisterUser(ctx context.Context, email, password, firstName, lastName, role string) (*User, error) {
+	email = strings.ToLower(strings.TrimSpace(email))
 	if email == "" || password == "" {
 		return nil, errors.New("email and password are required")
 	}
@@ -42,6 +48,10 @@ func (s *service) RegisterUser(ctx context.Context, email, password, firstName, 
 		IsActive:     true,
 	}
 	if err := s.repo.CreateUser(ctx, u); err != nil {
+		var pqErr *pq.Error
+		if errors.As(err, &pqErr) && pqErr.Code == "23505" && pqErr.Constraint == "users_email_key" {
+			return nil, ErrEmailAlreadyRegistered
+		}
 		return nil, err
 	}
 	return u, nil

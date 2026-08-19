@@ -4,13 +4,19 @@ import (
 	"context"
 	"errors"
 	"testing"
+
+	"github.com/lib/pq"
 )
 
 type memoryRepository struct {
-	created *User
+	created   *User
+	createErr error
 }
 
 func (r *memoryRepository) CreateUser(_ context.Context, u *User) error {
+	if r.createErr != nil {
+		return r.createErr
+	}
 	r.created = u
 	return nil
 }
@@ -51,6 +57,19 @@ func TestRegisterUserAllowsOnlySelfServiceRoles(t *testing.T) {
 				t.Fatalf("default role = %q, want CUSTOMER", u.Role)
 			}
 		})
+	}
+}
+
+func TestRegisterUserMapsDuplicateEmailToStableError(t *testing.T) {
+	repo := &memoryRepository{createErr: &pq.Error{Code: "23505", Constraint: "users_email_key"}}
+	svc := NewService(repo)
+
+	_, err := svc.RegisterUser(context.Background(), " Existing@Example.com ", "password", "First", "Last", "VENDOR")
+	if !errors.Is(err, ErrEmailAlreadyRegistered) {
+		t.Fatalf("RegisterUser() error = %v, want ErrEmailAlreadyRegistered", err)
+	}
+	if repo.created != nil {
+		t.Fatal("RegisterUser() persisted a duplicate-email account")
 	}
 }
 

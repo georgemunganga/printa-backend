@@ -231,6 +231,13 @@ func (s *service) RequestOTP(ctx context.Context, req OTPRequest) (*OTPChallenge
 		if destination == "" {
 			return nil, errors.New("destination is required")
 		}
+		destination = strings.ToLower(destination)
+		req.Email = destination
+		if _, err := s.userRepo.GetUserByEmail(ctx, destination); err == nil {
+			return nil, user.ErrEmailAlreadyRegistered
+		} else if !errors.Is(err, sql.ErrNoRows) {
+			return nil, err
+		}
 		deliveries = []otpDeliveryTarget{{Method: req.Method, Destination: destination}}
 	}
 
