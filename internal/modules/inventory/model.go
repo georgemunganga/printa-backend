@@ -26,16 +26,17 @@ type Store struct {
 
 // StoreStaff links a user to a store with a role.
 type StoreStaff struct {
-	ID        uuid.UUID `json:"id"`
-	StoreID   uuid.UUID `json:"store_id"`
-	UserID    uuid.UUID `json:"user_id"`
-	Role      string    `json:"role"` // MANAGER, STAFF, CASHIER
-	FirstName string    `json:"first_name,omitempty"`
-	LastName  string    `json:"last_name,omitempty"`
-	Email     string    `json:"email,omitempty"`
-	IsActive  bool      `json:"is_active"`
-	CreatedAt time.Time `json:"created_at"`
-	UpdatedAt time.Time `json:"updated_at"`
+	ID            uuid.UUID `json:"id"`
+	StoreID       uuid.UUID `json:"store_id"`
+	UserID        uuid.UUID `json:"user_id"`
+	Role          string    `json:"role"` // MANAGER, STAFF, CASHIER
+	FirstName     string    `json:"first_name,omitempty"`
+	LastName      string    `json:"last_name,omitempty"`
+	Email         string    `json:"email,omitempty"`
+	IsActive      bool      `json:"is_active"`
+	PINConfigured bool      `json:"pin_configured"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
 }
 
 // VendorStoreProduct is a platform product listed in a vendor's store with custom pricing.
