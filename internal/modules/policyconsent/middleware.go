@@ -29,5 +29,5 @@ func RequireCurrentVendorConsent(service Service) func(http.Handler) http.Handle
 }
 
 func consentExemptPath(path string) bool {
-	return strings.HasPrefix(path, "/api/v1/vendor/policies/") || path == "/api/v1/vendor/onboard" || path == "/api/v1/vendor/profile" || strings.HasPrefix(path, "/api/v1/users/")
+	return strings.HasPrefix(path, "/api/v1/vendor/policies/") || strings.HasPrefix(path, "/api/v1/vendor/operating-status") || path == "/api/v1/vendor/onboard" || path == "/api/v1/vendor/profile" || strings.HasPrefix(path, "/api/v1/users/")
 }

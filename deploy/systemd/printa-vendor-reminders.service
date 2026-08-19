@@ -1,0 +1,17 @@
+[Unit]
+Description=Printa vendor subscription reminder dispatcher
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+User=printapi
+Group=printapi
+EnvironmentFile=/etc/printa-api.env
+WorkingDirectory=/opt/printa-api
+ExecStart=/opt/printa-api/printa-vendor-reminders
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectHome=true
+ProtectSystem=full
+ReadWritePaths=/tmp

@@ -302,6 +302,43 @@ paths:
         '403': { $ref: '#/components/responses/Forbidden' }
         '409': { $ref: '#/components/responses/Conflict' }
 
+  /api/v1/vendor/operating-status:
+    get:
+      tags: [Vendors]
+      summary: Get the authenticated vendor’s operating status
+      description: Returns the derived compliance-approval and subscription-standing gates. Vendor operations are locked when the response is not operational; this endpoint remains available so the vendor can see the remediation state.
+      x-required-roles: [VENDOR]
+      responses:
+        '200':
+          description: Current server-authoritative operating status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorOperatingStatus'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/vendor/operating-status/grace-request:
+    post:
+      tags: [Vendors]
+      summary: Request the one-time five-day grace period for the current overdue subscription period
+      description: Grants one automatic five-day grace period only when the vendor’s subscription is past due and the period has ended. It does not override compliance approval.
+      x-required-roles: [VENDOR]
+      responses:
+        '201':
+          description: A new grace period was granted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorGraceRequestResult'
+        '409':
+          description: The vendor is not eligible or a grace period has already been requested for this subscription period.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorGraceRequestResult'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+
   /api/v1/vendor/wallet:
     get:
       tags: [Wallets]
@@ -1725,6 +1762,52 @@ components:
             properties:
               slug: { type: string }
               version: { type: string }
+    VendorOperatingStatus:
+      type: object
+      required: [vendor_id, operational, blocking_reasons, compliance, grace_eligible, payment]
+      properties:
+        vendor_id: { type: string, format: uuid }
+        operational: { type: boolean }
+        blocking_reasons:
+          type: array
+          items:
+            type: string
+            enum: [COMPLIANCE_APPROVAL_REQUIRED, COMPLIANCE_APPROVAL_REJECTED, SUBSCRIPTION_PAYMENT_DUE, SUBSCRIPTION_REQUIRED, SUBSCRIPTION_INACTIVE]
+        compliance:
+          type: object
+          required: [status]
+          properties:
+            status: { type: string, enum: [PENDING, APPROVED, REJECTED] }
+            submitted_at: { type: string, format: date-time }
+            reviewed_at: { type: string, format: date-time }
+            decision_reason: { type: string }
+        subscription:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [TRIAL, ACTIVE, PAST_DUE, SUSPENDED, CANCELLED] }
+            current_period_end: { type: string, format: date-time }
+            trial_ends_at: { type: string, format: date-time }
+        grace_period:
+          type: object
+          properties:
+            id: { type: string, format: uuid }
+            status: { type: string, enum: [ACTIVE, EXPIRED, REVOKED] }
+            ends_at: { type: string, format: date-time }
+        grace_eligible: { type: boolean }
+        payment:
+          type: object
+          required: [available, message]
+          properties:
+            available: { type: boolean }
+            url: { type: string }
+            message: { type: string }
+    VendorGraceRequestResult:
+      type: object
+      required: [status, granted]
+      properties:
+        status: { $ref: '#/components/schemas/VendorOperatingStatus' }
+        granted: { type: boolean }
     WalletOverview:
       type: object
       required: [entries, withdrawals]

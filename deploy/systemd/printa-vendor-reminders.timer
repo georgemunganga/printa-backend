@@ -1,0 +1,11 @@
+[Unit]
+Description=Run Printa vendor subscription reminder dispatcher daily
+
+[Timer]
+OnCalendar=*-*-* 06:00:00 UTC
+Persistent=true
+RandomizedDelaySec=5m
+Unit=printa-vendor-reminders.service
+
+[Install]
+WantedBy=timers.target
