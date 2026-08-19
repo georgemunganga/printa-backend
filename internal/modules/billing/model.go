@@ -6,6 +6,28 @@ import (
 	"github.com/google/uuid"
 )
 
+// ── Tier catalogue ────────────────────────────────────────────────────────────
+
+// TierFeature is a customer-visible capability included or unavailable in a tier.
+type TierFeature struct {
+	Text     string `json:"text"`
+	Included bool   `json:"included"`
+}
+
+// VendorTier is the server-authoritative subscription catalogue record.
+type VendorTier struct {
+	ID           uuid.UUID     `json:"id"`
+	Name         string        `json:"name"`
+	MonthlyPrice float64       `json:"monthly_price"`
+	Description  string        `json:"description"`
+	DisplayOrder int           `json:"display_order"`
+	IsAvailable  bool          `json:"is_available"`
+	IsPopular    bool          `json:"is_popular"`
+	Features     []TierFeature `json:"features"`
+	CreatedAt    time.Time     `json:"created_at"`
+	UpdatedAt    time.Time     `json:"updated_at"`
+}
+
 // ── Subscription ──────────────────────────────────────────────────────────────
 
 // SubscriptionStatus represents the lifecycle state of a vendor subscription.
@@ -100,11 +122,11 @@ type UpdateSubStatusRequest struct {
 type InvoiceStatus string
 
 const (
-	InvDraft          InvoiceStatus = "DRAFT"
-	InvOpen           InvoiceStatus = "OPEN"
-	InvPaid           InvoiceStatus = "PAID"
-	InvVoid           InvoiceStatus = "VOID"
-	InvUncollectible  InvoiceStatus = "UNCOLLECTIBLE"
+	InvDraft         InvoiceStatus = "DRAFT"
+	InvOpen          InvoiceStatus = "OPEN"
+	InvPaid          InvoiceStatus = "PAID"
+	InvVoid          InvoiceStatus = "VOID"
+	InvUncollectible InvoiceStatus = "UNCOLLECTIBLE"
 )
 
 // LineItem represents a single line on an invoice.

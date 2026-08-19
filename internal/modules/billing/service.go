@@ -13,6 +13,9 @@ import (
 
 // Service defines billing business logic.
 type Service interface {
+	// Tier catalogue
+	ListTiers(ctx context.Context) ([]*VendorTier, error)
+
 	// Subscription
 	CreateSubscription(ctx context.Context, req CreateSubscriptionRequest) (*VendorSubscription, error)
 	GetSubscription(ctx context.Context, vendorID string) (*VendorSubscription, error)
@@ -32,6 +35,10 @@ type Service interface {
 type service struct{ repo Repository }
 
 func NewService(repo Repository) Service { return &service{repo: repo} }
+
+func (s *service) ListTiers(ctx context.Context) ([]*VendorTier, error) {
+	return s.repo.ListTiers(ctx)
+}
 
 // ── Subscription ──────────────────────────────────────────────────────────────
 

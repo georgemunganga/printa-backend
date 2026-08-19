@@ -22,6 +22,7 @@ func NewHandler(service Service, vendorService vendor.Service) *Handler {
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/billing", func(r chi.Router) {
+		r.Get("/tiers", h.listTiers)
 		r.Post("/subscriptions", h.createSubscription)
 		r.Get("/subscriptions/vendor/{vendor_id}", h.getSubscription)
 		r.Patch("/subscriptions/vendor/{vendor_id}/tier", h.changeTier)
@@ -35,6 +36,15 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		r.Post("/invoices/{id}/pay", h.markPaid)
 		r.Post("/invoices/{id}/void", h.voidInvoice)
 	})
+}
+
+func (h *Handler) listTiers(w http.ResponseWriter, r *http.Request) {
+	tiers, err := h.service.ListTiers(r.Context())
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "Unable to load subscription tiers"})
+		return
+	}
+	respond(w, http.StatusOK, tiers)
 }
 
 func (h *Handler) createSubscription(w http.ResponseWriter, r *http.Request) {

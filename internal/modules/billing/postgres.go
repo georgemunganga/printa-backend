@@ -201,6 +201,52 @@ func (r *postgresRepo) VoidInvoice(ctx context.Context, id string) error {
 	return err
 }
 
+func (r *postgresRepo) ListTiers(ctx context.Context) ([]*VendorTier, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT id, name, monthly_price, features, created_at, updated_at
+		FROM vendor_tiers
+		ORDER BY COALESCE(NULLIF(features->>'display_order', '')::INT, 999), name`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	tiers := make([]*VendorTier, 0)
+	for rows.Next() {
+		tier := &VendorTier{}
+		var featuresJSON []byte
+		if err := rows.Scan(&tier.ID, &tier.Name, &tier.MonthlyPrice, &featuresJSON, &tier.CreatedAt, &tier.UpdatedAt); err != nil {
+			return nil, err
+		}
+
+		var metadata struct {
+			Description  string        `json:"description"`
+			DisplayOrder int           `json:"display_order"`
+			IsAvailable  bool          `json:"is_available"`
+			IsPopular    bool          `json:"is_popular"`
+			Features     []TierFeature `json:"features"`
+		}
+		if len(featuresJSON) > 0 {
+			if err := json.Unmarshal(featuresJSON, &metadata); err != nil {
+				return nil, err
+			}
+		}
+		tier.Description = metadata.Description
+		tier.DisplayOrder = metadata.DisplayOrder
+		tier.IsAvailable = metadata.IsAvailable
+		tier.IsPopular = metadata.IsPopular
+		tier.Features = metadata.Features
+		if tier.Features == nil {
+			tier.Features = []TierFeature{}
+		}
+		tiers = append(tiers, tier)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return tiers, nil
+}
+
 func (r *postgresRepo) GetTierByID(ctx context.Context, tierID string) (string, float64, error) {
 	var name string
 	var price float64
@@ -211,7 +257,9 @@ func (r *postgresRepo) GetTierByID(ctx context.Context, tierID string) (string, 
 
 // ── Scanners ──────────────────────────────────────────────────────────────────
 
-type rowScanner interface{ Scan(dest ...interface{}) error }
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
 
 func (r *postgresRepo) scanSub(row rowScanner) (*VendorSubscription, error) {
 	s := &VendorSubscription{}

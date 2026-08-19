@@ -23,6 +23,9 @@ type Repository interface {
 	MarkInvoicePaid(ctx context.Context, id string, ref string, notes string) error
 	VoidInvoice(ctx context.Context, id string) error
 
+	// Tier catalogue
+	ListTiers(ctx context.Context) ([]*VendorTier, error)
+
 	// Tier lookup (needed for invoice generation)
 	GetTierByID(ctx context.Context, tierID string) (name string, price float64, err error)
 }

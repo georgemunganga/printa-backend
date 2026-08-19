@@ -1061,6 +1061,19 @@ paths:
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
 
+  /api/v1/billing/tiers:
+    get:
+      tags: [Billing]
+      summary: List the server-authoritative vendor subscription tier catalogue
+      responses:
+        '200':
+          description: Available subscription tiers in display order
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/VendorTier' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /api/v1/billing/subscriptions:
     post:
       tags: [Billing]
@@ -2144,6 +2157,25 @@ components:
       required: [reason]
       properties:
         reason: { type: string }
+    VendorTier:
+      type: object
+      required: [id, name, monthly_price, description, display_order, is_available, is_popular, features]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string, example: CORE }
+        monthly_price: { type: number, format: double, example: 250.00 }
+        description: { type: string, example: For getting started }
+        display_order: { type: integer, example: 1 }
+        is_available: { type: boolean, example: true }
+        is_popular: { type: boolean, example: false }
+        features:
+          type: array
+          items:
+            type: object
+            required: [text, included]
+            properties:
+              text: { type: string, example: 20 jobs/day }
+              included: { type: boolean, example: true }
     SubscriptionStatus:
       type: object
       required: [status]
