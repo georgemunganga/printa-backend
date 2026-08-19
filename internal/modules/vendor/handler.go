@@ -5,15 +5,17 @@ import (
 	"net/http"
 
 	"github.com/georgemunganga/printa-backend/internal/middleware"
+	"github.com/georgemunganga/printa-backend/internal/modules/policyconsent"
 	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct {
-	service Service
+	service        Service
+	consentService policyconsent.Service
 }
 
-func NewHandler(service Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service Service, consentService policyconsent.Service) *Handler {
+	return &Handler{service: service, consentService: consentService}
 }
 
 func (h *Handler) RegisterRoutes(router chi.Router) {
@@ -44,9 +46,23 @@ func (h *Handler) onboardVendor(w http.ResponseWriter, r *http.Request) {
 		req.OwnerID = middleware.GetUserID(r)
 	}
 
+	accepted, err := h.consentService.HasRequiredAcceptance(r.Context(), req.OwnerID)
+	if err != nil {
+		http.Error(w, "unable to verify required vendor policy acceptance", http.StatusInternalServerError)
+		return
+	}
+	if !accepted {
+		http.Error(w, "acceptance of the current Vendor Terms and Privacy Notice is required before onboarding", http.StatusPreconditionRequired)
+		return
+	}
+
 	vendor, err := h.service.OnboardVendor(r.Context(), req.OwnerID, req.BusinessName, req.TaxID)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
+		return
+	}
+	if err := h.consentService.AttachAcceptedPoliciesToVendor(r.Context(), req.OwnerID, vendor.ID.String(), policyconsent.RequestIP(r), r.UserAgent()); err != nil {
+		http.Error(w, "vendor profile was created but consent evidence could not be attached; retry onboarding", http.StatusInternalServerError)
 		return
 	}
 

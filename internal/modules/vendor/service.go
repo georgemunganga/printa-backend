@@ -13,7 +13,7 @@ type Service interface {
 
 type service struct {
 	vendorRepo Repository
-	tierRepo  TierRepository
+	tierRepo   TierRepository
 }
 
 func NewService(vendorRepo Repository, tierRepo TierRepository) Service {
@@ -21,6 +21,10 @@ func NewService(vendorRepo Repository, tierRepo TierRepository) Service {
 }
 
 func (s *service) OnboardVendor(ctx context.Context, ownerID, businessName, taxID string) (*Vendor, error) {
+	if existing, err := s.vendorRepo.GetVendorByOwnerID(ctx, ownerID); err == nil {
+		return existing, nil
+	}
+
 	coreTier, err := s.tierRepo.GetTierByName(ctx, "CORE")
 	if err != nil {
 		return nil, err

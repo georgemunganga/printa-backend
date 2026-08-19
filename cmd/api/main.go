@@ -27,6 +27,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/operatinghours"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/payment"
+	"github.com/georgemunganga/printa-backend/internal/modules/policyconsent"
 	"github.com/georgemunganga/printa-backend/internal/modules/pos"
 	"github.com/georgemunganga/printa-backend/internal/modules/production"
 	"github.com/georgemunganga/printa-backend/internal/modules/routing"
@@ -155,6 +156,9 @@ func main() {
 	walletRepo := wallet.NewPostgresRepository(db)
 	walletService := wallet.NewService(walletRepo)
 
+	policyConsentRepo := policyconsent.NewPostgresRepository(db)
+	policyConsentService := policyconsent.NewService(policyConsentRepo)
+
 	assetHandler, err := assets.NewHandler(db)
 	if err != nil {
 		log.Fatal("Asset storage configuration failed:", err)
@@ -183,12 +187,14 @@ func main() {
 	// ── PROTECTED ROUTES (JWT required) ─────────────────────
 	router.Group(func(r chi.Router) {
 		r.Use(appMiddleware.Authenticate)
+		r.Use(policyconsent.RequireCurrentVendorConsent(policyConsentService))
 
 		// Users
 		user.NewHandler(userService).RegisterProtectedRoutes(r)
 
 		// Vendor management
-		vendor.NewHandler(vendorService).RegisterRoutes(r)
+		vendor.NewHandler(vendorService, policyConsentService).RegisterRoutes(r)
+		policyconsent.NewHandler(policyConsentService).RegisterRoutes(r)
 		// Vendor-authenticated, ledger-derived wallet reporting only.
 		wallet.NewHandler(walletService, vendorService).RegisterRoutes(r)
 

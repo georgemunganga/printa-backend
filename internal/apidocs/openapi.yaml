@@ -263,6 +263,45 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
 
+  /api/v1/vendor/policies/status:
+    get:
+      tags: [Vendors]
+      summary: Get the current vendor policy acceptance status
+      description: Returns currently published vendor-required policies and whether the authenticated vendor must accept them before operating protected vendor functions. Draft policies are not acceptible and are not returned as required policies.
+      x-required-roles: [VENDOR]
+      responses:
+        '200':
+          description: Current published policy status for the authenticated vendor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorPolicyConsentStatus'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+  /api/v1/vendor/policies/accept:
+    post:
+      tags: [Vendors]
+      summary: Affirmatively accept all current required vendor policies
+      description: Acceptance is accepted only for the complete set of currently published required policy versions. The server records the authenticated user, version, timestamp, source, user agent, and available request address.
+      x-required-roles: [VENDOR]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/VendorPolicyAcceptanceRequest'
+      responses:
+        '200':
+          description: Acceptance was recorded and the current status is returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VendorPolicyConsentStatus'
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
+        '409': { $ref: '#/components/responses/Conflict' }
+
   /api/v1/vendor/wallet:
     get:
       tags: [Wallets]
@@ -1648,6 +1687,44 @@ components:
     GenericObject:
       type: object
       additionalProperties: true
+    VendorPolicyConsentStatus:
+      type: object
+      required: [required_policies, accepted_policy_slugs, acceptance_required]
+      properties:
+        required_policies:
+          type: array
+          items: { $ref: '#/components/schemas/VendorPolicy' }
+        accepted_policy_slugs:
+          type: array
+          items: { type: string }
+        acceptance_required: { type: boolean }
+    VendorPolicy:
+      type: object
+      required: [id, slug, version, title, summary, status, required_for_vendor]
+      properties:
+        id: { type: string, format: uuid }
+        slug: { type: string, enum: [vendor-terms, vendor-privacy-notice, vendor-acceptable-use] }
+        version: { type: string }
+        title: { type: string }
+        summary: { type: string }
+        status: { type: string, enum: [PUBLISHED] }
+        required_for_vendor: { type: boolean }
+        document_url: { type: string }
+        effective_at: { type: string, format: date-time }
+        published_at: { type: string, format: date-time }
+    VendorPolicyAcceptanceRequest:
+      type: object
+      required: [policies]
+      properties:
+        policies:
+          type: array
+          minItems: 1
+          items:
+            type: object
+            required: [slug, version]
+            properties:
+              slug: { type: string }
+              version: { type: string }
     WalletOverview:
       type: object
       required: [entries, withdrawals]
