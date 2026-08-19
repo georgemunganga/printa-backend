@@ -22,6 +22,7 @@ tags:
   - name: Authentication
   - name: Users
   - name: Vendors
+  - name: Wallets
   - name: Catalog
   - name: Inventory
   - name: Delivery
@@ -260,6 +261,24 @@ paths:
       responses:
         '200': { $ref: '#/components/responses/ObjectResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/vendor/wallet:
+    get:
+      tags: [Wallets]
+      summary: Get the authenticated vendor's Printa Wallet overview
+      description: |
+        Returns only ledger-derived account, balance, transaction, and withdrawal-request data for the authenticated vendor. It does not activate an account, initiate a deposit or withdrawal, or expose collection-provider details. A vendor without an activated wallet receives an empty overview rather than synthetic balances.
+      x-required-roles: [VENDOR]
+      responses:
+        '200':
+          description: Ledger-derived wallet overview; account and balance are absent when the wallet is not connected.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/WalletOverview'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
 
   /api/v1/catalog/products:
@@ -1629,6 +1648,71 @@ components:
     GenericObject:
       type: object
       additionalProperties: true
+    WalletOverview:
+      type: object
+      required: [entries, withdrawals]
+      properties:
+        account:
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/WalletAccount' }]
+        balance:
+          nullable: true
+          allOf: [{ $ref: '#/components/schemas/WalletBalance' }]
+        entries:
+          type: array
+          items: { $ref: '#/components/schemas/WalletLedgerEntry' }
+        withdrawals:
+          type: array
+          items: { $ref: '#/components/schemas/WalletWithdrawalRequest' }
+    WalletAccount:
+      type: object
+      required: [id, vendor_id, currency, state, created_at, updated_at]
+      properties:
+        id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        currency: { type: string, example: ZMW }
+        state: { type: string, enum: [PENDING, ACTIVE, SUSPENDED, CLOSED] }
+        created_at: { type: string, format: date-time }
+        updated_at: { type: string, format: date-time }
+        activated_at: { type: string, format: date-time, nullable: true }
+    WalletBalance:
+      type: object
+      required: [wallet_account_id, currency, available_minor, pending_minor, held_minor, calculated_at]
+      properties:
+        wallet_account_id: { type: string, format: uuid }
+        currency: { type: string, example: ZMW }
+        available_minor: { type: integer, format: int64, description: Amount in the currency's minor unit. }
+        pending_minor: { type: integer, format: int64, description: Amount in the currency's minor unit. }
+        held_minor: { type: integer, format: int64, description: Amount in the currency's minor unit. }
+        calculated_at: { type: string, format: date-time }
+    WalletLedgerEntry:
+      type: object
+      required: [id, journal_id, entry_type, ledger_account, amount_minor, currency, created_at]
+      properties:
+        id: { type: string, format: uuid }
+        journal_id: { type: string, format: uuid }
+        wallet_account_id: { type: string, format: uuid, nullable: true }
+        vendor_id: { type: string, format: uuid, nullable: true }
+        entry_type: { type: string }
+        ledger_account: { type: string }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string, example: ZMW }
+        provider_reference: { type: string }
+        created_at: { type: string, format: date-time }
+    WalletWithdrawalRequest:
+      type: object
+      required: [id, wallet_account_id, vendor_id, amount_minor, currency, status, requested_at]
+      properties:
+        id: { type: string, format: uuid }
+        wallet_account_id: { type: string, format: uuid }
+        vendor_id: { type: string, format: uuid }
+        amount_minor: { type: integer, format: int64 }
+        currency: { type: string, example: ZMW }
+        status: { type: string, enum: [PENDING_REVIEW, APPROVED, SUBMITTED, PAID, FAILED, CANCELLED, REJECTED] }
+        requested_at: { type: string, format: date-time }
+        reviewed_at: { type: string, format: date-time, nullable: true }
+        completed_at: { type: string, format: date-time, nullable: true }
+        failure_reason: { type: string }
     Error:
       type: object
       properties:

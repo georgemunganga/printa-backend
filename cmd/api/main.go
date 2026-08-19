@@ -33,6 +33,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/submission"
 	"github.com/georgemunganga/printa-backend/internal/modules/user"
 	"github.com/georgemunganga/printa-backend/internal/modules/vendor"
+	"github.com/georgemunganga/printa-backend/internal/modules/wallet"
 	"github.com/go-chi/chi/v5"
 	chiMiddleware "github.com/go-chi/chi/v5/middleware"
 	"github.com/joho/godotenv"
@@ -151,6 +152,9 @@ func main() {
 	paymentRepo := payment.NewPostgresRepository(db)
 	paymentService := payment.NewService(paymentRepo, paymentGateways)
 
+	walletRepo := wallet.NewPostgresRepository(db)
+	walletService := wallet.NewService(walletRepo)
+
 	assetHandler, err := assets.NewHandler(db)
 	if err != nil {
 		log.Fatal("Asset storage configuration failed:", err)
@@ -185,6 +189,8 @@ func main() {
 
 		// Vendor management
 		vendor.NewHandler(vendorService).RegisterRoutes(r)
+		// Vendor-authenticated, ledger-derived wallet reporting only.
+		wallet.NewHandler(walletService, vendorService).RegisterRoutes(r)
 
 		// Catalog
 		catalog.NewHandler(catalogService).RegisterRoutes(r)
