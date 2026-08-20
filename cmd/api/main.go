@@ -371,6 +371,7 @@ func corsMiddleware() func(http.Handler) http.Handler {
 func configuredCORSOrigins() map[string]bool {
 	defaults := []string{
 		"https://vendor.printa.co.zm",
+		"https://admin.printa.co.zm",
 		"https://app.printa.co.zm",
 		"https://printa.co.zm",
 		"http://localhost:5173",
