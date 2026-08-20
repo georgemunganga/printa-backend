@@ -6,14 +6,14 @@ import "time"
 
 // PlatformStats is a snapshot of key platform metrics for the admin dashboard.
 type PlatformStats struct {
-	TotalUsers         int     `json:"total_users"`
-	TotalVendors       int     `json:"total_vendors"`
-	TotalStores        int     `json:"total_stores"`
-	TotalOrders        int     `json:"total_orders"`
-	TotalRevenue       float64 `json:"total_revenue"`
-	ActiveSubscriptions int    `json:"active_subscriptions"`
-	PendingOrders      int     `json:"pending_orders"`
-	ProductionJobs     int     `json:"active_production_jobs"`
+	TotalUsers          int     `json:"total_users"`
+	TotalVendors        int     `json:"total_vendors"`
+	TotalStores         int     `json:"total_stores"`
+	TotalOrders         int     `json:"total_orders"`
+	TotalRevenue        float64 `json:"total_revenue"`
+	ActiveSubscriptions int     `json:"active_subscriptions"`
+	PendingOrders       int     `json:"pending_orders"`
+	ProductionJobs      int     `json:"active_production_jobs"`
 }
 
 // ── User Management ───────────────────────────────────────────────────────────
@@ -32,6 +32,18 @@ type AdminUser struct {
 type UpdateUserRequest struct {
 	Role     string `json:"role,omitempty"`
 	IsActive *bool  `json:"is_active,omitempty"`
+}
+
+// CreateAdministratorRequest intentionally contains no password. Administrator
+// access is OTP-only and the required legacy password hash is internally random.
+type CreateAdministratorRequest struct {
+	Email     string `json:"email"`
+	FirstName string `json:"first_name"`
+	LastName  string `json:"last_name"`
+}
+
+type UpdateAdministratorStatusRequest struct {
+	IsActive bool `json:"is_active"`
 }
 
 // ── Vendor Management ─────────────────────────────────────────────────────────

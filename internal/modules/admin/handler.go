@@ -6,8 +6,8 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/go-chi/chi/v5"
 	appMiddleware "github.com/georgemunganga/printa-backend/internal/middleware"
+	"github.com/go-chi/chi/v5"
 )
 
 type Handler struct{ service Service }
@@ -22,7 +22,13 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 		// Platform stats
 		r.Get("/stats", h.getStats)
 
-		// User management
+		// Administrator identity management. These routes are intentionally
+		// separate from customer, vendor, staff and cashier account operations.
+		r.Get("/administrators", h.listAdministrators)
+		r.Post("/administrators", h.createAdministrator)
+		r.Patch("/administrators/{id}/status", h.updateAdministratorStatus)
+
+		// Customer, vendor, staff and cashier account management.
 		r.Get("/users", h.listUsers)
 		r.Get("/users/{id}", h.getUser)
 		r.Patch("/users/{id}", h.updateUser)
@@ -94,6 +100,57 @@ func (h *Handler) listUsers(w http.ResponseWriter, r *http.Request) {
 		"page":      page,
 		"page_size": pageSize,
 	})
+}
+
+func (h *Handler) listAdministrators(w http.ResponseWriter, r *http.Request) {
+	page, pageSize := pageParams(r)
+	administrators, total, err := h.service.ListAdministrators(r.Context(), r.URL.Query().Get("search"), page, pageSize)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, map[string]interface{}{
+		"data":      administrators,
+		"total":     total,
+		"page":      page,
+		"page_size": pageSize,
+	})
+}
+
+func (h *Handler) createAdministrator(w http.ResponseWriter, r *http.Request) {
+	var req CreateAdministratorRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	administrator, err := h.service.CreateAdministrator(r.Context(), appMiddleware.GetUserID(r), req)
+	if err != nil {
+		code := http.StatusBadRequest
+		if strings.Contains(strings.ToLower(err.Error()), "duplicate") {
+			code = http.StatusConflict
+		}
+		respond(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusCreated, administrator)
+}
+
+func (h *Handler) updateAdministratorStatus(w http.ResponseWriter, r *http.Request) {
+	var req UpdateAdministratorStatusRequest
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
+		return
+	}
+	administrator, err := h.service.UpdateAdministratorStatus(r.Context(), appMiddleware.GetUserID(r), chi.URLParam(r, "id"), req)
+	if err != nil {
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "not found") {
+			code = http.StatusNotFound
+		}
+		respond(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, administrator)
 }
 
 func (h *Handler) getUser(w http.ResponseWriter, r *http.Request) {

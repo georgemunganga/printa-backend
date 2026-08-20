@@ -131,6 +131,24 @@ func (r *postgresRepository) DeactivateUser(ctx context.Context, id string) erro
 	return err
 }
 
+func (r *postgresRepository) CreateAdministrator(ctx context.Context, request CreateAdministratorRequest, passwordHash string) (*AdminUser, error) {
+	id := uuid.New().String()
+	_, err := r.db.ExecContext(ctx, `
+		INSERT INTO users (id, email, password_hash, first_name, last_name, role, is_active)
+		VALUES ($1, $2, $3, $4, $5, 'ADMIN', true)`,
+		id, request.Email, passwordHash, request.FirstName, request.LastName)
+	if err != nil {
+		return nil, err
+	}
+	return r.GetUser(ctx, id)
+}
+
+func (r *postgresRepository) CountActiveAdministrators(ctx context.Context) (int, error) {
+	var total int
+	err := r.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM users WHERE role = 'ADMIN' AND is_active = true").Scan(&total)
+	return total, err
+}
+
 // ── Vendor Management ─────────────────────────────────────────────────────────
 
 func (r *postgresRepository) ListVendors(ctx context.Context, status, search string, limit, offset int) ([]AdminVendor, int, error) {

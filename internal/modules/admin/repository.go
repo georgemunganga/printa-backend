@@ -12,6 +12,8 @@ type Repository interface {
 	GetUser(ctx context.Context, id string) (*AdminUser, error)
 	UpdateUser(ctx context.Context, id string, req UpdateUserRequest) (*AdminUser, error)
 	DeactivateUser(ctx context.Context, id string) error
+	CreateAdministrator(ctx context.Context, request CreateAdministratorRequest, passwordHash string) (*AdminUser, error)
+	CountActiveAdministrators(ctx context.Context) (int, error)
 
 	// Vendor management
 	ListVendors(ctx context.Context, status, search string, limit, offset int) ([]AdminVendor, int, error)
