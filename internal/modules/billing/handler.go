@@ -20,9 +20,14 @@ func NewHandler(service Service, vendorService vendor.Service) *Handler {
 	return &Handler{service: service, vendorService: vendorService}
 }
 
+// RegisterPublicRoutes exposes catalogue data that is safe to display before a
+// vendor signs in. Checkout, subscription, and invoice routes remain protected.
+func (h *Handler) RegisterPublicRoutes(r chi.Router) {
+	r.Get("/api/v1/billing/tiers", h.listTiers)
+}
+
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/billing", func(r chi.Router) {
-		r.Get("/tiers", h.listTiers)
 		r.Post("/subscription-checkouts", h.createSubscriptionCheckout)
 		r.Get("/subscription-checkouts/{id}", h.getSubscriptionCheckout)
 		r.Post("/subscription-checkouts/{id}/mobile-money", h.initiateSubscriptionMobileMoneyCollection)

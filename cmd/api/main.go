@@ -194,6 +194,9 @@ func main() {
 	// Customer storefront browsing
 	inventory.NewHandler(inventoryService, vendorService, userService).RegisterStorefrontRoutes(router)
 	delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterStorefrontRoutes(router)
+	// Subscription plan catalogue contains public presentation data only.
+	billingHandler := billing.NewHandler(billingService, vendorService)
+	billingHandler.RegisterPublicRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
 	payment.NewHandler(paymentService, vendorService, orderService).RegisterWebhookRoutes(router)
 	// Signed collection-provider callback receiver. Subscription activation still
@@ -253,7 +256,7 @@ func main() {
 		pos.NewHandler(posService, inventoryService, vendorService, orderService).RegisterRoutes(r)
 
 		// Billing
-		billing.NewHandler(billingService, vendorService).RegisterRoutes(r)
+		billingHandler.RegisterRoutes(r)
 
 		// Admin platform management
 		admin.NewHandler(adminService).RegisterRoutes(r)
