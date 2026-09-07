@@ -74,20 +74,36 @@ func (h *Handler) validateCustomerAssets(r *http.Request, req PlaceOrderRequest)
 			continue
 		}
 		var customisation struct {
-			AssetID string `json:"asset_id"`
+			AssetID        string `json:"asset_id"`
+			UploadedAssets []struct {
+				AssetID string `json:"asset_id"`
+			} `json:"uploaded_assets"`
 		}
 		if err := json.Unmarshal(item.Customisation, &customisation); err != nil {
 			return err
 		}
-		if customisation.AssetID == "" {
-			continue
+		assetIDs := make([]string, 0, len(customisation.UploadedAssets)+1)
+		if customisation.AssetID != "" {
+			assetIDs = append(assetIDs, customisation.AssetID)
 		}
-		var exists bool
-		if err := h.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM design_assets WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL)`, customisation.AssetID, middleware.GetUserID(r)).Scan(&exists); err != nil {
-			return err
+		for _, asset := range customisation.UploadedAssets {
+			if asset.AssetID != "" {
+				assetIDs = append(assetIDs, asset.AssetID)
+			}
 		}
-		if !exists {
-			return fmt.Errorf("design asset is not available to the authenticated customer")
+		seen := make(map[string]struct{}, len(assetIDs))
+		for _, assetID := range assetIDs {
+			if _, duplicate := seen[assetID]; duplicate {
+				continue
+			}
+			seen[assetID] = struct{}{}
+			var exists bool
+			if err := h.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM design_assets WHERE id=$1 AND owner_id=$2 AND deleted_at IS NULL)`, assetID, middleware.GetUserID(r)).Scan(&exists); err != nil {
+				return err
+			}
+			if !exists {
+				return fmt.Errorf("design asset is not available to the authenticated customer")
+			}
 		}
 	}
 	return nil
