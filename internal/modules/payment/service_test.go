@@ -12,10 +12,10 @@ func TestListMethodsDoesNotExposeStubMobileMoneyGateways(t *testing.T) {
 		ProviderAirtel:  NewAirtelMoneyGateway("key", "secret", "https://example.com", "production"),
 	})
 	methods := service.ListMethods()
-	if len(methods) != 3 || !methods[0].Enabled || methods[0].Provider != ProviderCash {
+	if len(methods) != 4 || !methods[0].Enabled || methods[0].Provider != ProviderCash {
 		t.Fatalf("unexpected methods: %+v", methods)
 	}
-	if methods[1].Enabled || methods[2].Enabled {
+	if methods[1].Enabled || methods[2].Enabled || methods[3].Enabled {
 		t.Fatalf("stub gateways must not be advertised as available: %+v", methods)
 	}
 }

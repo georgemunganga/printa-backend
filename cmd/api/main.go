@@ -148,18 +148,9 @@ func main() {
 	attendanceHandler := attendance.NewHandler(attendanceService, inventoryService, vendorService)
 
 	paymentGateways := payment.GatewayRegistry{
-		payment.ProviderMTNMomo: payment.NewMTNMomoGateway(
-			os.Getenv("MTN_MOMO_API_KEY"),
-			os.Getenv("MTN_MOMO_API_SECRET"),
-			os.Getenv("MTN_MOMO_BASE_URL"),
-			os.Getenv("MTN_MOMO_ENV"),
-		),
-		payment.ProviderAirtel: payment.NewAirtelMoneyGateway(
-			os.Getenv("AIRTEL_CLIENT_ID"),
-			os.Getenv("AIRTEL_CLIENT_SECRET"),
-			os.Getenv("AIRTEL_BASE_URL"),
-			os.Getenv("AIRTEL_ENV"),
-		),
+		payment.ProviderMTNMomo: payment.NewLencoMobileMoneyGateway(os.Getenv("LENCO_API_BASE_URL"), os.Getenv("LENCO_SECRET_KEY"), "mtn"),
+		payment.ProviderAirtel:  payment.NewLencoMobileMoneyGateway(os.Getenv("LENCO_API_BASE_URL"), os.Getenv("LENCO_SECRET_KEY"), "airtel"),
+		payment.ProviderZamtel:  payment.NewLencoMobileMoneyGateway(os.Getenv("LENCO_API_BASE_URL"), os.Getenv("LENCO_SECRET_KEY"), "zamtel"),
 	}
 	paymentRepo := payment.NewPostgresRepository(db)
 	paymentService := payment.NewService(paymentRepo, paymentGateways)
@@ -208,7 +199,10 @@ func main() {
 	// Signed collection-provider callback receiver. Subscription activation still
 	// re-queries the provider and validates the server-locked checkout amount.
 	lenco.NewHandlerFromEnv(db, func(ctx context.Context, reference string) error {
-		_, err := billingService.VerifySubscriptionCheckoutByReference(ctx, reference)
+		if _, err := billingService.VerifySubscriptionCheckoutByReference(ctx, reference); err == nil {
+			return nil
+		}
+		_, err := paymentService.VerifyByProviderRef(ctx, reference)
 		return err
 	}).RegisterRoutes(router)
 

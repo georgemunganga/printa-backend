@@ -175,6 +175,15 @@ func (g *airtelMoneyGateway) Refund(ctx context.Context, providerRef string, amo
 
 func NormaliseStatus(provider Provider, providerStatus string) TxStatus {
 	s := strings.ToUpper(providerStatus)
+	// Shared statuses returned by the configured collection aggregator.
+	switch s {
+	case "SUCCESSFUL", "SUCCESS", "COMPLETED":
+		return TxCompleted
+	case "FAILED", "FAILURE":
+		return TxFailed
+	case "CANCELLED", "CANCELED":
+		return TxCancelled
+	}
 	switch provider {
 	case ProviderMTNMomo:
 		switch s {
@@ -195,6 +204,15 @@ func NormaliseStatus(provider Provider, providerStatus string) TxStatus {
 			return TxFailed
 		case "DP": // Debit Pending
 			return TxProcessing
+		default:
+			return TxProcessing
+		}
+	case ProviderZamtel:
+		switch s {
+		case "SUCCESSFUL", "SUCCESS", "COMPLETED":
+			return TxCompleted
+		case "FAILED", "FAILURE":
+			return TxFailed
 		default:
 			return TxProcessing
 		}

@@ -12,6 +12,7 @@ type Provider string
 const (
 	ProviderMTNMomo Provider = "MTN_MOMO"
 	ProviderAirtel  Provider = "AIRTEL_MONEY"
+	ProviderZamtel  Provider = "ZAMTEL_MONEY"
 	ProviderCash    Provider = "CASH"
 	ProviderCard    Provider = "CARD"
 )
@@ -65,7 +66,7 @@ type PaymentTransaction struct {
 
 // InitiatePaymentRequest is the payload to start a new payment.
 type InitiatePaymentRequest struct {
-	Provider       string  `json:"provider"`       // MTN_MOMO | AIRTEL_MONEY | CASH | CARD
+	Provider       string  `json:"provider"`       // MTN_MOMO | AIRTEL_MONEY | ZAMTEL_MONEY | CASH
 	ReferenceType  string  `json:"reference_type"` // ORDER | INVOICE | SUBSCRIPTION
 	ReferenceID    string  `json:"reference_id"`
 	VendorID       string  `json:"vendor_id,omitempty"`

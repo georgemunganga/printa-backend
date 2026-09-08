@@ -16,6 +16,7 @@ type Service interface {
 	Initiate(ctx context.Context, req InitiatePaymentRequest) (*PaymentTransaction, error)
 	GetByID(ctx context.Context, id string) (*PaymentTransaction, error)
 	Verify(ctx context.Context, id string) (*PaymentTransaction, error)
+	VerifyByProviderRef(ctx context.Context, reference string) (*PaymentTransaction, error)
 	HandleWebhook(ctx context.Context, payload WebhookPayload) (*PaymentTransaction, error)
 	Refund(ctx context.Context, id string) (*PaymentTransaction, error)
 	ListByReference(ctx context.Context, refType ReferenceType, refID string) ([]*PaymentTransaction, error)
@@ -36,6 +37,7 @@ func (s *service) ListMethods() []PaymentMethod {
 	for _, definition := range []PaymentMethod{
 		{Provider: ProviderMTNMomo, Label: "MTN MoMo", RequiresPhone: true, Message: "Coming soon"},
 		{Provider: ProviderAirtel, Label: "Airtel Money", RequiresPhone: true, Message: "Coming soon"},
+		{Provider: ProviderZamtel, Label: "Zamtel Money", RequiresPhone: true, Message: "Coming soon"},
 	} {
 		gateway, exists := s.gateways[definition.Provider]
 		if available, ok := gateway.(availabilityAwareGateway); exists && ok && available.Available() {
@@ -187,6 +189,19 @@ func (s *service) Verify(ctx context.Context, id string) (*PaymentTransaction, e
 	_ = s.repo.UpdateStatus(ctx, id, internalStatus, resp.ProviderStatus, "")
 
 	return s.repo.GetByID(ctx, id)
+}
+
+func (s *service) VerifyByProviderRef(ctx context.Context, reference string) (*PaymentTransaction, error) {
+	for _, provider := range []Provider{ProviderMTNMomo, ProviderAirtel, ProviderZamtel} {
+		tx, err := s.repo.GetByProviderRef(ctx, provider, reference)
+		if err == nil {
+			return s.Verify(ctx, tx.ID.String())
+		}
+		if err != sql.ErrNoRows {
+			return nil, err
+		}
+	}
+	return nil, sql.ErrNoRows
 }
 
 func (s *service) HandleWebhook(ctx context.Context, payload WebhookPayload) (*PaymentTransaction, error) {

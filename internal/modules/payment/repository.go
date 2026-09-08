@@ -117,7 +117,9 @@ const selectSQL = `
 	       last_error, metadata, created_at, updated_at
 	FROM payment_transactions`
 
-type rowScanner interface{ Scan(dest ...interface{}) error }
+type rowScanner interface {
+	Scan(dest ...interface{}) error
+}
 
 func (r *postgresRepo) scan(row rowScanner) (*PaymentTransaction, error) {
 	tx := &PaymentTransaction{}
