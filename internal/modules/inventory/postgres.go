@@ -68,10 +68,25 @@ func (r *storePostgres) ListStoresByVendor(ctx context.Context, vendorID string)
 	return stores, nil
 }
 
-func (r *storePostgres) ListActiveStores(ctx context.Context) ([]*Store, error) {
+func (r *storePostgres) ListActiveStores(ctx context.Context, platformProductID string) ([]*Store, error) {
 	rows, err := r.db.QueryContext(ctx, `
-					SELECT id,vendor_id,name,COALESCE(description, ''),COALESCE(address, ''),COALESCE(city, ''),country,COALESCE(phone, ''),COALESCE(email, ''),latitude,longitude,is_active,created_at,updated_at
-				FROM stores WHERE is_active=true ORDER BY created_at DESC`)
+		SELECT s.id,s.vendor_id,s.name,COALESCE(s.description, ''),COALESCE(s.address, ''),COALESCE(s.city, ''),s.country,COALESCE(s.phone, ''),COALESCE(s.email, ''),s.latitude,s.longitude,s.is_active,s.created_at,s.updated_at
+		FROM stores s
+		WHERE s.is_active=true
+		  AND (
+		    NULLIF($1, '') IS NULL
+		    OR EXISTS (
+		      SELECT 1
+		      FROM vendor_store_products vsp
+		      JOIN platform_products pp ON pp.id = vsp.platform_product_id
+		      WHERE vsp.store_id = s.id
+		        AND vsp.platform_product_id = NULLIF($1, '')::uuid
+		        AND vsp.is_available=true AND vsp.stock_quantity > 0 AND pp.is_active=true
+		        AND COALESCE(pp.attributes->>'inventory_source', 'printa') <> 'custom'
+		        AND COALESCE(pp.attributes->>'is_online_enabled', 'true') <> 'false'
+		    )
+		  )
+		ORDER BY s.created_at DESC`, platformProductID)
 
 	if err != nil {
 		return nil, err

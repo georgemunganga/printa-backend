@@ -13,7 +13,7 @@ type Service interface {
 	CreateStore(ctx context.Context, req CreateStoreRequest) (*Store, error)
 	GetStore(ctx context.Context, id string) (*Store, error)
 	ListStores(ctx context.Context, vendorID string) ([]*Store, error)
-	ListStorefrontStores(ctx context.Context) ([]*Store, error)
+	ListStorefrontStores(ctx context.Context, platformProductID string) ([]*Store, error)
 	ListStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error)
 	ListStorefrontCatalog(ctx context.Context) ([]*StorefrontCatalogProduct, error)
 	UpdateStore(ctx context.Context, id string, req UpdateStoreRequest) (*Store, error)
@@ -126,8 +126,13 @@ func (s *service) ListStores(ctx context.Context, vendorID string) ([]*Store, er
 	return s.storeRepo.ListStoresByVendor(ctx, vendorID)
 }
 
-func (s *service) ListStorefrontStores(ctx context.Context) ([]*Store, error) {
-	return s.storeRepo.ListActiveStores(ctx)
+func (s *service) ListStorefrontStores(ctx context.Context, platformProductID string) ([]*Store, error) {
+	if platformProductID != "" {
+		if _, err := uuid.Parse(platformProductID); err != nil {
+			return nil, fmt.Errorf("invalid platform_product_id: %w", err)
+		}
+	}
+	return s.storeRepo.ListActiveStores(ctx, platformProductID)
 }
 
 func (s *service) ListStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error) {

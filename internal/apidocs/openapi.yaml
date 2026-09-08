@@ -769,6 +769,26 @@ paths:
                 type: array
                 items: { $ref: '#/components/schemas/StorefrontCatalogProduct' }
 
+  /api/v1/storefront/stores:
+    get:
+      tags: [Inventory]
+      summary: List active customer-facing stores
+      description: When platform_product_id is supplied, returns only stores with an active, in-stock online listing for that managed product.
+      security: []
+      parameters:
+        - name: platform_product_id
+          in: query
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Active stores capable of serving the requested product
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Store' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+
   /api/v1/orders:
     post:
       tags: [Orders]

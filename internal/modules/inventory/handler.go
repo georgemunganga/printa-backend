@@ -152,9 +152,13 @@ func (h *Handler) deactivateStore(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) listStorefrontStores(w http.ResponseWriter, r *http.Request) {
-	stores, err := h.service.ListStorefrontStores(r.Context())
+	stores, err := h.service.ListStorefrontStores(r.Context(), strings.TrimSpace(r.URL.Query().Get("platform_product_id")))
 	if err != nil {
-		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		status := http.StatusInternalServerError
+		if strings.Contains(err.Error(), "invalid platform_product_id") {
+			status = http.StatusBadRequest
+		}
+		respond(w, status, map[string]string{"error": err.Error()})
 		return
 	}
 	if stores == nil {
