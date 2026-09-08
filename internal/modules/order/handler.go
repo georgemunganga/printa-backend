@@ -365,6 +365,9 @@ func (h *Handler) cancelOrder(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listStoreOrders(w http.ResponseWriter, r *http.Request) {
 	storeID := chi.URLParam(r, "store_id")
+	if !h.requireStoreReadAccess(w, r, storeID) {
+		return
+	}
 	status := r.URL.Query().Get("status")
 	orders, err := h.service.ListStoreOrders(r.Context(), storeID, status)
 	if err != nil {
@@ -375,6 +378,41 @@ func (h *Handler) listStoreOrders(w http.ResponseWriter, r *http.Request) {
 		orders = make([]*Order, 0)
 	}
 	respond(w, http.StatusOK, orders)
+}
+
+// requireStoreReadAccess protects store-scoped operational reads. The store ID
+// comes from the URL, so it must be checked against the authenticated account
+// instead of trusting the frontend's active-store context.
+func (h *Handler) requireStoreReadAccess(w http.ResponseWriter, r *http.Request, storeID string) bool {
+	if middleware.GetRole(r) == middleware.RoleAdmin {
+		return true
+	}
+	var allowed bool
+	var query string
+	switch middleware.GetRole(r) {
+	case middleware.RoleVendor:
+		query = `SELECT EXISTS (
+			SELECT 1 FROM stores s JOIN vendors v ON v.id = s.vendor_id
+			WHERE s.id=$1 AND v.owner_id=$2 AND s.is_active=true
+		)`
+	case middleware.RoleStaff, middleware.RoleCashier:
+		query = `SELECT EXISTS (
+			SELECT 1 FROM store_staff ss JOIN stores s ON s.id = ss.store_id
+			WHERE ss.store_id=$1 AND ss.user_id=$2 AND s.is_active=true
+		)`
+	default:
+		respond(w, http.StatusForbidden, map[string]string{"error": "insufficient permissions"})
+		return false
+	}
+	if err := h.db.QueryRowContext(r.Context(), query, storeID, middleware.GetUserID(r)).Scan(&allowed); err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "store access could not be checked"})
+		return false
+	}
+	if !allowed {
+		respond(w, http.StatusForbidden, map[string]string{"error": "you do not have access to this store"})
+		return false
+	}
+	return true
 }
 
 func (h *Handler) listCustomerOrders(w http.ResponseWriter, r *http.Request) {
