@@ -44,8 +44,8 @@ func (h *Handler) RegisterPublicRoutes(r chi.Router) {
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/assets", func(r chi.Router) {
-		r.With(middleware.RequireRole(middleware.RoleCustomer, middleware.RoleVendor, middleware.RoleStaff, middleware.RoleCashier)).Post("/upload", h.upload)
-		r.With(middleware.RequireRole(middleware.RoleCustomer)).Post("/claim", h.claim)
+		r.With(middleware.RequireRole(middleware.RoleCustomer, middleware.RoleVendor, middleware.RoleStaff, middleware.RoleCashier, middleware.RoleAdmin)).Post("/upload", h.upload)
+		r.With(middleware.RequireRole(middleware.RoleCustomer, middleware.RoleVendor, middleware.RoleStaff, middleware.RoleCashier, middleware.RoleAdmin)).Post("/claim", h.claim)
 		r.With(middleware.RequireRole(middleware.RoleCustomer, middleware.RoleVendor, middleware.RoleStaff, middleware.RoleCashier, middleware.RoleAdmin)).Get("/{asset_id}", h.get)
 	})
 }
@@ -106,7 +106,7 @@ func readUpload(w http.ResponseWriter, r *http.Request) (io.ReadCloser, *multipa
 		contentType = "application/octet-stream"
 	}
 	if !allowedContentType(contentType) {
-		respond(w, http.StatusUnsupportedMediaType, map[string]string{"error": "only PDF, PNG, JPEG, SVG, TIFF, and WebP design files are accepted"})
+		respond(w, http.StatusUnsupportedMediaType, map[string]string{"error": "only PDF, Word, Excel, PNG, JPEG, SVG, TIFF, and WebP design files are accepted"})
 		file.Close()
 		return nil, nil, "", nil, false
 	}

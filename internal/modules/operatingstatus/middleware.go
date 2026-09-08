@@ -57,5 +57,9 @@ func operatingStatusExemptPath(path string) bool {
 		path == "/api/v1/vendor/onboard" ||
 		path == "/api/v1/vendor/profile" ||
 		strings.HasPrefix(path, "/api/v1/users/") ||
+		strings.HasPrefix(path, "/api/v1/orders/customer/") ||
+		path == "/api/v1/orders" ||
+		strings.HasPrefix(path, "/api/v1/delivery/locations") ||
+		(path == "/api/v1/assets/claim" || path == "/api/v1/assets/upload") ||
 		strings.HasPrefix(path, "/api/v1/submissions/")
 }

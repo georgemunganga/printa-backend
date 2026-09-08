@@ -57,19 +57,24 @@ func (h *Handler) initiate(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if middleware.GetRole(r) == middleware.RoleCustomer {
+	isOwnedCustomerOrder := false
+	if strings.ToUpper(req.ReferenceType) == "ORDER" {
+		if order, err := h.orderService.GetOrder(r.Context(), req.ReferenceID); err == nil && order.CustomerID != nil && order.CustomerID.String() == middleware.GetUserID(r) {
+			isOwnedCustomerOrder = true
+			req.Amount = order.Total
+			req.Currency = order.Currency
+			req.VendorID = ""
+		}
+	}
+	if isOwnedCustomerOrder {
+		// Any authenticated account may pay for an online order it owns, regardless of its operational role.
+	} else if middleware.GetRole(r) == middleware.RoleCustomer {
 		if strings.ToUpper(req.ReferenceType) != "ORDER" {
 			respond(w, http.StatusBadRequest, map[string]string{"error": "customers may initiate payments only for orders"})
 			return
 		}
-		o, err := h.orderService.GetOrder(r.Context(), req.ReferenceID)
-		if err != nil || o.CustomerID == nil || o.CustomerID.String() != middleware.GetUserID(r) {
-			respond(w, http.StatusForbidden, map[string]string{"error": "order is not accessible to the authenticated customer"})
-			return
-		}
-		req.Amount = o.Total
-		req.Currency = o.Currency
-		req.VendorID = ""
+		respond(w, http.StatusForbidden, map[string]string{"error": "order is not accessible to the authenticated customer"})
+		return
 	} else if !h.bindVendorRequest(w, r, &req.VendorID) {
 		return
 	}

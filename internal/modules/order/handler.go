@@ -42,7 +42,7 @@ func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "Idempotency-Key must not exceed 128 characters"})
 		return
 	}
-	if middleware.GetRole(r) == middleware.RoleCustomer {
+	if strings.EqualFold(req.Channel, "ONLINE") || middleware.GetRole(r) == middleware.RoleCustomer {
 		req.CustomerID = middleware.GetUserID(r)
 		if err := h.validateCustomerAssets(r, req); err != nil {
 			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
@@ -304,7 +304,7 @@ func (h *Handler) listStoreOrders(w http.ResponseWriter, r *http.Request) {
 
 func (h *Handler) listCustomerOrders(w http.ResponseWriter, r *http.Request) {
 	customerID := chi.URLParam(r, "customer_id")
-	if middleware.GetRole(r) == middleware.RoleCustomer && customerID != middleware.GetUserID(r) {
+	if customerID != middleware.GetUserID(r) {
 		respond(w, http.StatusForbidden, map[string]string{"error": "customer scope does not match authenticated user"})
 		return
 	}

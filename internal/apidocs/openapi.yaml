@@ -623,16 +623,16 @@ paths:
   /api/v1/delivery/locations:
     get:
       tags: [Delivery]
-      summary: List saved delivery locations for the authenticated customer
-      x-required-roles: [CUSTOMER]
+      summary: List saved delivery locations owned by the authenticated account
+      x-required-roles: [CUSTOMER, VENDOR, STAFF, CASHIER, ADMIN]
       responses:
         '200': { $ref: '#/components/responses/ArrayResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
     post:
       tags: [Delivery]
-      summary: Create a saved delivery location for the authenticated customer
-      x-required-roles: [CUSTOMER]
+      summary: Create a saved delivery location for the authenticated account
+      x-required-roles: [CUSTOMER, VENDOR, STAFF, CASHIER, ADMIN]
       requestBody:
         required: true
         content:
@@ -648,7 +648,7 @@ paths:
     patch:
       tags: [Delivery]
       summary: Update an owned saved delivery location
-      x-required-roles: [CUSTOMER]
+      x-required-roles: [CUSTOMER, VENDOR, STAFF, CASHIER, ADMIN]
       requestBody:
         required: true
         content:
@@ -663,7 +663,7 @@ paths:
     delete:
       tags: [Delivery]
       summary: Delete an owned saved delivery location
-      x-required-roles: [CUSTOMER]
+      x-required-roles: [CUSTOMER, VENDOR, STAFF, CASHIER, ADMIN]
       responses:
         '204': { description: Delivery location deleted }
         '401': { $ref: '#/components/responses/Unauthorized' }
@@ -674,7 +674,7 @@ paths:
     put:
       tags: [Delivery]
       summary: Set an owned saved delivery location as default
-      x-required-roles: [CUSTOMER]
+      x-required-roles: [CUSTOMER, VENDOR, STAFF, CASHIER, ADMIN]
       responses:
         '200': { $ref: '#/components/responses/ObjectResponse' }
         '401': { $ref: '#/components/responses/Unauthorized' }

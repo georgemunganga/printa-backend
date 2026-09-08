@@ -9,7 +9,7 @@ import (
 	"github.com/go-chi/chi/v5"
 )
 
-// Handler exposes delivery-location endpoints to authenticated customers.
+// Handler exposes user-owned delivery-location endpoints to authenticated accounts.
 type Handler struct {
 	service Service
 }
@@ -27,9 +27,6 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 }
 
 func (h *Handler) listLocations(w http.ResponseWriter, r *http.Request) {
-	if !requireCustomer(w, r) {
-		return
-	}
 	locations, err := h.service.ListLocations(r.Context(), middleware.GetUserID(r))
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -39,9 +36,6 @@ func (h *Handler) listLocations(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) createLocation(w http.ResponseWriter, r *http.Request) {
-	if !requireCustomer(w, r) {
-		return
-	}
 	var req UpsertLocationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -56,9 +50,6 @@ func (h *Handler) createLocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) updateLocation(w http.ResponseWriter, r *http.Request) {
-	if !requireCustomer(w, r) {
-		return
-	}
 	var req UpsertLocationRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -73,9 +64,6 @@ func (h *Handler) updateLocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) deleteLocation(w http.ResponseWriter, r *http.Request) {
-	if !requireCustomer(w, r) {
-		return
-	}
 	if err := h.service.DeleteLocation(r.Context(), chi.URLParam(r, "id"), middleware.GetUserID(r)); err != nil {
 		respondLocationError(w, err)
 		return
@@ -84,23 +72,12 @@ func (h *Handler) deleteLocation(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) setDefaultLocation(w http.ResponseWriter, r *http.Request) {
-	if !requireCustomer(w, r) {
-		return
-	}
 	location, err := h.service.SetDefaultLocation(r.Context(), chi.URLParam(r, "id"), middleware.GetUserID(r))
 	if err != nil {
 		respondLocationError(w, err)
 		return
 	}
 	respond(w, http.StatusOK, location)
-}
-
-func requireCustomer(w http.ResponseWriter, r *http.Request) bool {
-	if middleware.GetRole(r) != middleware.RoleCustomer {
-		respond(w, http.StatusForbidden, map[string]string{"error": "customer role is required"})
-		return false
-	}
-	return true
 }
 
 func respondLocationError(w http.ResponseWriter, err error) {
