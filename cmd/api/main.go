@@ -29,6 +29,7 @@ import (
 	"github.com/georgemunganga/printa-backend/internal/modules/operatingstatus"
 	"github.com/georgemunganga/printa-backend/internal/modules/order"
 	"github.com/georgemunganga/printa-backend/internal/modules/payment"
+	"github.com/georgemunganga/printa-backend/internal/modules/paymentmethod"
 	"github.com/georgemunganga/printa-backend/internal/modules/policyconsent"
 	"github.com/georgemunganga/printa-backend/internal/modules/pos"
 	"github.com/georgemunganga/printa-backend/internal/modules/production"
@@ -154,6 +155,7 @@ func main() {
 	}
 	paymentRepo := payment.NewPostgresRepository(db)
 	paymentService := payment.NewService(paymentRepo, paymentGateways)
+	paymentMethodService := paymentmethod.NewService(paymentmethod.NewPostgresRepository(db))
 
 	walletRepo := wallet.NewPostgresRepository(db)
 	walletService := wallet.NewService(walletRepo)
@@ -264,6 +266,7 @@ func main() {
 		comms.NewHandler(commsService).RegisterRoutes(r)
 
 		// Payments (protected)
+		paymentmethod.NewHandler(paymentMethodService).RegisterRoutes(r)
 		payment.NewHandler(paymentService, vendorService, orderService).RegisterProtectedRoutes(r)
 	})
 
