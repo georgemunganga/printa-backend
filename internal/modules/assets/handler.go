@@ -17,6 +17,7 @@ import (
 	assetstore "github.com/georgemunganga/printa-backend/internal/assets"
 	"github.com/georgemunganga/printa-backend/internal/middleware"
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 )
 
 type Handler struct {
@@ -50,6 +51,7 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 }
 
 func (h *Handler) guestUpload(w http.ResponseWriter, r *http.Request) {
+	w.Header().Set("Cache-Control", "no-store")
 	// Bound temporary database storage without placing cleanup on the request's
 	// critical path. Claimed assets have no expiry and are never selected here.
 	_, _ = h.storage.CleanupExpiredGuests(r.Context(), 100)
@@ -129,10 +131,11 @@ func (h *Handler) claim(w http.ResponseWriter, r *http.Request) {
 	}
 	req.AssetID = strings.TrimSpace(req.AssetID)
 	req.ClaimToken = strings.TrimSpace(req.ClaimToken)
-	if req.AssetID == "" || req.ClaimToken == "" {
+	if _, err := uuid.Parse(req.AssetID); err != nil || len(req.ClaimToken) != 43 {
 		respond(w, http.StatusBadRequest, map[string]string{"error": "asset_id and claim_token are required"})
 		return
 	}
+	w.Header().Set("Cache-Control", "no-store")
 	tokenHash := sha256.Sum256([]byte(req.ClaimToken))
 	userID := middleware.GetUserID(r)
 	var name, contentType, provider string
