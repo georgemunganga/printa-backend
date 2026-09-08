@@ -10,7 +10,7 @@ import (
 func RequireCurrentVendorConsent(service Service) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			if middleware.GetRole(r) != middleware.RoleVendor || consentExemptPath(r.URL.Path) {
+			if middleware.GetRole(r) != middleware.RoleVendor || consentExemptRequest(r) {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -28,6 +28,10 @@ func RequireCurrentVendorConsent(service Service) func(http.Handler) http.Handle
 	}
 }
 
-func consentExemptPath(path string) bool {
+func consentExemptRequest(r *http.Request) bool {
+	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/orders/") {
+		return true
+	}
+	path := r.URL.Path
 	return strings.HasPrefix(path, "/api/v1/vendor/policies/") || strings.HasPrefix(path, "/api/v1/vendor/operating-status") || path == "/api/v1/vendor/onboard" || path == "/api/v1/vendor/profile" || strings.HasPrefix(path, "/api/v1/users/") || strings.HasPrefix(path, "/api/v1/orders/customer/") || path == "/api/v1/orders" || strings.HasPrefix(path, "/api/v1/delivery/locations") || path == "/api/v1/assets/claim" || path == "/api/v1/assets/upload"
 }

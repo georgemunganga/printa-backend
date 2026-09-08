@@ -38,6 +38,9 @@ func operatingStatusExemptRequest(r *http.Request) bool {
 	if operatingStatusExemptPath(r.URL.Path) {
 		return true
 	}
+	if r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/api/v1/orders/") {
+		return true
+	}
 
 	// Subscription, invoice, and wallet overview reads are recovery information, not operational
 	// actions. The narrow checkout writes below are the only payment-recovery writes permitted
