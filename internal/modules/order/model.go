@@ -59,6 +59,8 @@ type OrderItem struct {
 	UnitPrice            float64         `json:"unit_price"`
 	LineTotal            float64         `json:"line_total"`
 	Customisation        json.RawMessage `json:"customisation,omitempty"`
+	ProductName          string          `json:"product_name,omitempty"`
+	ProductCategory      string          `json:"product_category,omitempty"`
 	CreatedAt            time.Time       `json:"created_at"`
 	UpdatedAt            time.Time       `json:"updated_at"`
 }

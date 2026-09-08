@@ -103,10 +103,20 @@ func (r *postgresRepo) ListOrdersByStore(ctx context.Context, storeID string, st
 }
 
 func (r *postgresRepo) ListOrdersByCustomer(ctx context.Context, customerID string) ([]*Order, error) {
-	return r.queryOrders(ctx, `
+	orders, err := r.queryOrders(ctx, `
 		SELECT id,store_id,customer_id,order_number,status,channel,
 		       subtotal,discount,tax,total,currency,notes,delivery_address,metadata,created_at,updated_at
 		FROM orders WHERE customer_id=$1 ORDER BY created_at DESC`, customerID)
+	if err != nil {
+		return nil, err
+	}
+	for _, order := range orders {
+		order.Items, err = r.listItems(ctx, order.ID.String())
+		if err != nil {
+			return nil, err
+		}
+	}
+	return orders, nil
 }
 
 func (r *postgresRepo) UpdateStatus(ctx context.Context, id string, status OrderStatus) error {
@@ -177,8 +187,13 @@ func (r *postgresRepo) queryOrders(ctx context.Context, query string, args ...in
 
 func (r *postgresRepo) listItems(ctx context.Context, orderID string) ([]*OrderItem, error) {
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT id, order_id, vendor_store_product_id, quantity, unit_price, line_total, customisation, created_at, updated_at
-		FROM order_items WHERE order_id=$1 ORDER BY created_at ASC`, orderID)
+		SELECT oi.id, oi.order_id, oi.vendor_store_product_id, oi.quantity, oi.unit_price,
+		       oi.line_total, oi.customisation, oi.created_at, oi.updated_at,
+		       COALESCE(pp.name, ''), COALESCE(pp.category, '')
+		FROM order_items oi
+		LEFT JOIN vendor_store_products vsp ON vsp.id = oi.vendor_store_product_id
+		LEFT JOIN platform_products pp ON pp.id = vsp.platform_product_id
+		WHERE oi.order_id=$1 ORDER BY oi.created_at ASC`, orderID)
 	if err != nil {
 		return nil, err
 	}
@@ -189,7 +204,7 @@ func (r *postgresRepo) listItems(ctx context.Context, orderID string) ([]*OrderI
 		var customisation []byte
 		if err := rows.Scan(&item.ID, &item.OrderID, &item.VendorStoreProductID,
 			&item.Quantity, &item.UnitPrice, &item.LineTotal,
-			&customisation, &item.CreatedAt, &item.UpdatedAt); err != nil {
+			&customisation, &item.CreatedAt, &item.UpdatedAt, &item.ProductName, &item.ProductCategory); err != nil {
 			return nil, err
 		}
 		item.Customisation = customisation
