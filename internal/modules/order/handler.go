@@ -205,15 +205,15 @@ func (h *Handler) validateCustomerDelivery(r *http.Request, req *PlaceOrderReque
 			snapshot.Longitude = &longitude.Float64
 		}
 	}
-	var covered bool
+	var covered, hasConfiguredZones bool
 	if err := h.db.QueryRowContext(r.Context(), `
-		SELECT EXISTS(
-			SELECT 1 FROM store_delivery_zones
-			WHERE store_id=$1 AND is_active=true AND LOWER(city)=LOWER($2) AND LOWER(country)=LOWER($3)
-		)`, req.StoreID, snapshot.City, snapshot.Country).Scan(&covered); err != nil {
+		SELECT
+			EXISTS(SELECT 1 FROM store_delivery_zones WHERE store_id=$1 AND is_active=true AND LOWER(city)=LOWER($2) AND LOWER(country)=LOWER($3)),
+			EXISTS(SELECT 1 FROM store_delivery_zones WHERE store_id=$1)
+		`, req.StoreID, snapshot.City, snapshot.Country).Scan(&covered, &hasConfiguredZones); err != nil {
 		return err
 	}
-	if !covered {
+	if hasConfiguredZones && !covered {
 		return fmt.Errorf("the selected store does not cover this delivery location")
 	}
 	if snapshot.Latitude == nil || snapshot.Longitude == nil {
@@ -224,7 +224,10 @@ func (h *Handler) validateCustomerDelivery(r *http.Request, req *PlaceOrderReque
 		return err
 	}
 	snapshot.Method = "delivery"
-	snapshot.Coverage = "CITY_LEVEL"
+	snapshot.Coverage = "PRICING_ENGINE"
+	if covered {
+		snapshot.Coverage = "CITY_LEVEL"
+	}
 	snapshot.DistanceKM = quote.DistanceKM
 	snapshot.Fee = quote.Fee
 	snapshot.Currency = quote.Currency

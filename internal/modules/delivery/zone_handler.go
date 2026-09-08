@@ -117,11 +117,16 @@ func (h *ZoneHandler) checkEligibility(w http.ResponseWriter, r *http.Request) {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
 	}
-	if result.Eligible && req.Latitude != nil && req.Longitude != nil {
+	if req.Latitude != nil && req.Longitude != nil && (result.Eligible || result.Code == "NOT_CONFIGURED") {
 		result.Quote, err = h.pricingService.Quote(r.Context(), storeID, *req.Latitude, *req.Longitude)
 		if err != nil {
 			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
 			return
+		}
+		if !result.Eligible {
+			result.Eligible = true
+			result.Code = "PRICED_ROUTE"
+			result.Message = "Delivery is available at the calculated Printa rate."
 		}
 	}
 	respond(w, http.StatusOK, result)
