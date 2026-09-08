@@ -95,6 +95,8 @@ func (h *Handler) initiate(w http.ResponseWriter, r *http.Request) {
 		msg := err.Error()
 		if strings.Contains(msg, "required") || strings.Contains(msg, "invalid") || strings.Contains(msg, "greater than") {
 			code = http.StatusBadRequest
+		} else if strings.Contains(msg, "not currently available") {
+			code = http.StatusUnprocessableEntity
 		} else if strings.Contains(msg, "duplicate") {
 			code = http.StatusConflict
 		}
