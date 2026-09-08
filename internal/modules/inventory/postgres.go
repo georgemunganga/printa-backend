@@ -3,6 +3,7 @@ package inventory
 import (
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 
 	"github.com/google/uuid"
@@ -273,14 +274,16 @@ func (r *productPostgres) ListAvailableStorefrontProducts(ctx context.Context, s
 		return nil, err
 	}
 	rows, err := r.db.QueryContext(ctx, `
-		SELECT vsp.id, vsp.store_id, pp.name, pp.description, pp.category,
-		       vsp.vendor_price, vsp.currency, pp.image_url,
+		SELECT vsp.id, vsp.store_id, pp.id, pp.name, COALESCE(pp.description, ''), pp.category,
+		       vsp.vendor_price, vsp.currency, COALESCE(pp.image_url, ''), pp.attributes,
 		       (vsp.is_available AND vsp.stock_quantity > 0) AS in_stock
 		FROM vendor_store_products vsp
 		JOIN platform_products pp ON pp.id = vsp.platform_product_id
 		JOIN stores s ON s.id = vsp.store_id
 		WHERE vsp.store_id=$1 AND s.is_active=true AND vsp.is_available=true
 		  AND vsp.stock_quantity > 0 AND pp.is_active=true
+		  AND COALESCE(pp.attributes->>'inventory_source', 'printa') <> 'custom'
+		  AND COALESCE(pp.attributes->>'is_online_enabled', 'true') <> 'false'
 		ORDER BY pp.name ASC`, uid)
 	if err != nil {
 		return nil, err
@@ -290,9 +293,48 @@ func (r *productPostgres) ListAvailableStorefrontProducts(ctx context.Context, s
 	var products []*StorefrontProduct
 	for rows.Next() {
 		p := &StorefrontProduct{}
-		if err := rows.Scan(&p.ID, &p.StoreID, &p.Name, &p.Description, &p.Category,
-			&p.Price, &p.Currency, &p.ImageURL, &p.InStock); err != nil {
+		var attrs []byte
+		if err := rows.Scan(&p.ID, &p.StoreID, &p.PlatformProductID, &p.Name, &p.Description, &p.Category,
+			&p.Price, &p.Currency, &p.ImageURL, &attrs, &p.InStock); err != nil {
 			return nil, err
+		}
+		if attrs != nil {
+			p.Attributes = json.RawMessage(attrs)
+		}
+		products = append(products, p)
+	}
+	return products, rows.Err()
+}
+
+func (r *productPostgres) ListAvailableStorefrontCatalog(ctx context.Context) ([]*StorefrontCatalogProduct, error) {
+	rows, err := r.db.QueryContext(ctx, `
+		SELECT pp.id, pp.name, COALESCE(pp.description, ''), pp.category,
+		       MIN(vsp.vendor_price), vsp.currency, COALESCE(pp.image_url, ''),
+		       pp.attributes, COUNT(DISTINCT vsp.store_id)
+		FROM platform_products pp
+		JOIN vendor_store_products vsp ON vsp.platform_product_id = pp.id
+		JOIN stores s ON s.id = vsp.store_id
+		WHERE pp.is_active=true AND s.is_active=true AND vsp.is_available=true
+		  AND vsp.stock_quantity > 0
+		  AND COALESCE(pp.attributes->>'inventory_source', 'printa') <> 'custom'
+		  AND COALESCE(pp.attributes->>'is_online_enabled', 'true') <> 'false'
+		GROUP BY pp.id, vsp.currency
+		ORDER BY pp.category ASC, pp.name ASC`)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var products []*StorefrontCatalogProduct
+	for rows.Next() {
+		p := &StorefrontCatalogProduct{}
+		var attrs []byte
+		if err := rows.Scan(&p.ID, &p.Name, &p.Description, &p.Category, &p.StartingPrice,
+			&p.Currency, &p.ImageURL, &attrs, &p.AvailableStoreCount); err != nil {
+			return nil, err
+		}
+		if attrs != nil {
+			p.Attributes = json.RawMessage(attrs)
 		}
 		products = append(products, p)
 	}

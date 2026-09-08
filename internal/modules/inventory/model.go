@@ -1,6 +1,7 @@
 package inventory
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/google/uuid"
@@ -54,13 +55,29 @@ type VendorStoreProduct struct {
 
 // StorefrontProduct is the customer-safe, joined store-product representation.
 type StorefrontProduct struct {
-	ID          uuid.UUID `json:"id"`
-	StoreID     uuid.UUID `json:"store_id"`
-	Name        string    `json:"name"`
-	Description string    `json:"description,omitempty"`
-	Category    string    `json:"category"`
-	Price       float64   `json:"price"`
-	Currency    string    `json:"currency"`
-	ImageURL    string    `json:"image_url,omitempty"`
-	InStock     bool      `json:"in_stock"`
+	ID                uuid.UUID       `json:"id"`
+	StoreID           uuid.UUID       `json:"store_id"`
+	PlatformProductID uuid.UUID       `json:"platform_product_id"`
+	Name              string          `json:"name"`
+	Description       string          `json:"description,omitempty"`
+	Category          string          `json:"category"`
+	Price             float64         `json:"price"`
+	Currency          string          `json:"currency"`
+	ImageURL          string          `json:"image_url,omitempty"`
+	Attributes        json.RawMessage `json:"attributes,omitempty"`
+	InStock           bool            `json:"in_stock"`
+}
+
+// StorefrontCatalogProduct is an online print product with live store supply.
+// It deliberately excludes vendor-specific POS inventory.
+type StorefrontCatalogProduct struct {
+	ID                  uuid.UUID       `json:"id"`
+	Name                string          `json:"name"`
+	Description         string          `json:"description,omitempty"`
+	Category            string          `json:"category"`
+	StartingPrice       float64         `json:"starting_price"`
+	Currency            string          `json:"currency"`
+	ImageURL            string          `json:"image_url,omitempty"`
+	Attributes          json.RawMessage `json:"attributes,omitempty"`
+	AvailableStoreCount int             `json:"available_store_count"`
 }

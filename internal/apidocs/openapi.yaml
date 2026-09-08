@@ -753,6 +753,20 @@ paths:
         '200': { $ref: '#/components/responses/ObjectResponse' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /api/v1/storefront/catalog/products:
+    get:
+      tags: [Catalog]
+      summary: List online print products with live store availability
+      description: Excludes vendor-specific POS inventory and products without active, in-stock store listings.
+      security: []
+      responses:
+        '200':
+          description: Managed online catalogue with starting prices and available store counts
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/StorefrontCatalogProduct' }
 
   /api/v1/orders:
     post:
@@ -1972,6 +1986,20 @@ components:
         currency: { type: string, example: ZMW }
         sku: { type: string }
         image_url: { type: string, format: uri }
+        attributes: { type: object, additionalProperties: true }
+    StorefrontCatalogProduct:
+      type: object
+      required: [id, name, category, starting_price, currency, available_store_count]
+      properties:
+        id: { type: string, format: uuid }
+        name: { type: string }
+        description: { type: string }
+        category: { type: string }
+        starting_price: { type: number, format: double, minimum: 0 }
+        currency: { type: string, example: ZMW }
+        image_url: { type: string, format: uri }
+        attributes: { type: object, additionalProperties: true }
+        available_store_count: { type: integer, minimum: 1 }
     Store:
       type: object
       required: [vendor_id, name, description, address, city, country, phone, email]

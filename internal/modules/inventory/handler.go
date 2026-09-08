@@ -25,9 +25,22 @@ func NewHandler(service Service, vendorService vendor.Service, userService user.
 // RegisterStorefrontRoutes exposes only active stores and available products for customer browsing.
 func (h *Handler) RegisterStorefrontRoutes(r chi.Router) {
 	r.Route("/api/v1/storefront", func(r chi.Router) {
+		r.Get("/catalog/products", h.listStorefrontCatalog)
 		r.Get("/stores", h.listStorefrontStores)
 		r.Get("/stores/{store_id}/products", h.listStorefrontProducts)
 	})
+}
+
+func (h *Handler) listStorefrontCatalog(w http.ResponseWriter, r *http.Request) {
+	products, err := h.service.ListStorefrontCatalog(r.Context())
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if products == nil {
+		products = make([]*StorefrontCatalogProduct, 0)
+	}
+	respond(w, http.StatusOK, products)
 }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {

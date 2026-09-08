@@ -26,6 +26,7 @@ type ProductRepository interface {
 	GetProductByID(ctx context.Context, id string) (*VendorStoreProduct, error)
 	ListProducts(ctx context.Context, storeID string) ([]*VendorStoreProduct, error)
 	ListAvailableStorefrontProducts(ctx context.Context, storeID string) ([]*StorefrontProduct, error)
+	ListAvailableStorefrontCatalog(ctx context.Context) ([]*StorefrontCatalogProduct, error)
 	UpdateStock(ctx context.Context, id string, qty int) error
 	UpdateVendorPrice(ctx context.Context, id string, price float64) error
 	UpdateAvailability(ctx context.Context, id string, available bool) error
