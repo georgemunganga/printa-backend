@@ -110,13 +110,21 @@ func (h *Handler) validateCustomerAssets(r *http.Request, req PlaceOrderRequest)
 }
 
 type customerDeliveryInput struct {
-	Method     string `json:"method"`
-	LocationID string `json:"location_id"`
+	Method         string   `json:"method"`
+	LocationID     string   `json:"location_id"`
+	RecipientName  string   `json:"recipient_name"`
+	RecipientPhone string   `json:"recipient_phone"`
+	AddressLine1   string   `json:"address_line1"`
+	AddressLine2   string   `json:"address_line2"`
+	City           string   `json:"city"`
+	Country        string   `json:"country"`
+	Latitude       *float64 `json:"latitude"`
+	Longitude      *float64 `json:"longitude"`
 }
 
 type canonicalCustomerDelivery struct {
 	Method         string   `json:"method"`
-	LocationID     string   `json:"location_id"`
+	LocationID     string   `json:"location_id,omitempty"`
 	Label          string   `json:"label"`
 	RecipientName  string   `json:"recipient_name"`
 	RecipientPhone string   `json:"recipient_phone"`
@@ -129,9 +137,8 @@ type canonicalCustomerDelivery struct {
 	Coverage       string   `json:"coverage"`
 }
 
-// validateCustomerDelivery accepts a customer delivery order only when its referenced saved location belongs to the
-// authenticated customer and the requested store has an active matching city-level zone. Client address text and
-// coordinates are never persisted; the order receives a canonical server snapshot instead.
+// validateCustomerDelivery accepts either a customer-owned saved location or a validated one-time address. The order
+// receives a canonical snapshot, so a later location edit cannot change an order already in production.
 func (h *Handler) validateCustomerDelivery(r *http.Request, req *PlaceOrderRequest) error {
 	if len(req.DeliveryAddress) == 0 || string(req.DeliveryAddress) == "null" {
 		return nil
@@ -149,25 +156,46 @@ func (h *Handler) validateCustomerDelivery(r *http.Request, req *PlaceOrderReque
 		req.DeliveryAddress = canonical
 		return nil
 	case "delivery":
-		if input.LocationID == "" {
-			return fmt.Errorf("delivery orders require a saved delivery location")
-		}
 	default:
 		return fmt.Errorf("delivery_address.method must be pickup or delivery")
 	}
 
 	var snapshot canonicalCustomerDelivery
-	var latitude, longitude sql.NullFloat64
-	err := h.db.QueryRowContext(r.Context(), `
+	if strings.TrimSpace(input.LocationID) == "" {
+		snapshot = canonicalCustomerDelivery{
+			Method: "delivery", Label: "Current location", RecipientName: strings.TrimSpace(input.RecipientName),
+			RecipientPhone: strings.TrimSpace(input.RecipientPhone), AddressLine1: strings.TrimSpace(input.AddressLine1),
+			AddressLine2: strings.TrimSpace(input.AddressLine2), City: strings.TrimSpace(input.City), Country: strings.TrimSpace(input.Country),
+			Latitude: input.Latitude, Longitude: input.Longitude,
+		}
+		if snapshot.RecipientName == "" || snapshot.RecipientPhone == "" || snapshot.AddressLine1 == "" || snapshot.City == "" || snapshot.Country == "" {
+			return fmt.Errorf("one-time delivery requires recipient_name, recipient_phone, address_line1, city, and country")
+		}
+		if (snapshot.Latitude == nil) != (snapshot.Longitude == nil) {
+			return fmt.Errorf("delivery latitude and longitude must be provided together")
+		}
+		if snapshot.Latitude != nil && (*snapshot.Latitude < -90 || *snapshot.Latitude > 90 || *snapshot.Longitude < -180 || *snapshot.Longitude > 180) {
+			return fmt.Errorf("delivery coordinates are invalid")
+		}
+	} else {
+		var latitude, longitude sql.NullFloat64
+		err := h.db.QueryRowContext(r.Context(), `
 		SELECT id, label, recipient_name, recipient_phone, address_line1, COALESCE(address_line2, ''), city, country, latitude, longitude
 		FROM customer_delivery_locations
 		WHERE id=$1 AND customer_id=$2`, input.LocationID, req.CustomerID).
-		Scan(&snapshot.LocationID, &snapshot.Label, &snapshot.RecipientName, &snapshot.RecipientPhone, &snapshot.AddressLine1, &snapshot.AddressLine2, &snapshot.City, &snapshot.Country, &latitude, &longitude)
-	if err == sql.ErrNoRows {
-		return fmt.Errorf("saved delivery location is not available to the authenticated customer")
-	}
-	if err != nil {
-		return err
+			Scan(&snapshot.LocationID, &snapshot.Label, &snapshot.RecipientName, &snapshot.RecipientPhone, &snapshot.AddressLine1, &snapshot.AddressLine2, &snapshot.City, &snapshot.Country, &latitude, &longitude)
+		if err == sql.ErrNoRows {
+			return fmt.Errorf("saved delivery location is not available to the authenticated customer")
+		}
+		if err != nil {
+			return err
+		}
+		if latitude.Valid {
+			snapshot.Latitude = &latitude.Float64
+		}
+		if longitude.Valid {
+			snapshot.Longitude = &longitude.Float64
+		}
 	}
 	var covered bool
 	if err := h.db.QueryRowContext(r.Context(), `
@@ -178,13 +206,7 @@ func (h *Handler) validateCustomerDelivery(r *http.Request, req *PlaceOrderReque
 		return err
 	}
 	if !covered {
-		return fmt.Errorf("the selected store does not cover this saved delivery location")
-	}
-	if latitude.Valid {
-		snapshot.Latitude = &latitude.Float64
-	}
-	if longitude.Valid {
-		snapshot.Longitude = &longitude.Float64
+		return fmt.Errorf("the selected store does not cover this delivery location")
 	}
 	snapshot.Method = "delivery"
 	snapshot.Coverage = "CITY_LEVEL"

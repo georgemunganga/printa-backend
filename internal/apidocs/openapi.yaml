@@ -2184,7 +2184,19 @@ components:
         notes: { type: string }
         delivery_address:
           type: object
-          additionalProperties: true
+          description: Pickup details, a saved customer delivery location, or a validated one-time delivery address.
+          properties:
+            method: { type: string, enum: [pickup, delivery] }
+            store_id: { type: string, format: uuid }
+            location_id: { type: string, format: uuid, description: Optional saved customer location. }
+            recipient_name: { type: string }
+            recipient_phone: { type: string }
+            address_line1: { type: string }
+            address_line2: { type: string }
+            city: { type: string }
+            country: { type: string }
+            latitude: { type: number, format: double, minimum: -90, maximum: 90 }
+            longitude: { type: number, format: double, minimum: -180, maximum: 180 }
         discount: { type: number, format: double, minimum: 0 }
     StatusUpdate:
       type: object

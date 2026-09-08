@@ -258,7 +258,9 @@ func (h *Handler) authorizedAssetOwner(r *http.Request, assetID string) (string,
 }
 func allowedContentType(v string) bool {
 	switch strings.ToLower(strings.TrimSpace(strings.Split(v, ";")[0])) {
-	case "application/pdf", "image/png", "image/jpeg", "image/svg+xml", "image/tiff", "image/webp":
+	case "application/pdf", "image/png", "image/jpeg", "image/svg+xml", "image/tiff", "image/webp",
+		"application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet":
 		return true
 	default:
 		return false
