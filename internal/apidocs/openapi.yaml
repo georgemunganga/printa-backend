@@ -26,6 +26,7 @@ tags:
   - name: Catalog
   - name: Inventory
   - name: Delivery
+  - name: Assets
   - name: Orders
   - name: Routing
   - name: Production
@@ -1624,6 +1625,61 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
         '403': { $ref: '#/components/responses/Forbidden' }
         '404': { $ref: '#/components/responses/NotFound' }
+
+  /api/v1/assets/guest-upload:
+    post:
+      tags: [Assets]
+      summary: Upload temporary artwork before customer authentication
+      description: Returns a bearer claim token. The upload expires after 24 hours and cannot be used in an order until an authenticated customer claims it.
+      security: []
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file]
+              properties:
+                file: { type: string, format: binary }
+      responses:
+        '201':
+          description: Temporary artwork was stored
+          content:
+            application/json:
+              schema:
+                allOf:
+                  - $ref: '#/components/schemas/DesignAsset'
+                  - type: object
+                    required: [claim_token, expires_at]
+                    properties:
+                      claim_token: { type: string, writeOnly: true }
+                      expires_at: { type: string, format: date-time }
+        '413': { $ref: '#/components/responses/BadRequest' }
+        '415': { $ref: '#/components/responses/BadRequest' }
+
+  /api/v1/assets/claim:
+    post:
+      tags: [Assets]
+      summary: Claim temporary artwork for the authenticated customer
+      x-required-roles: [CUSTOMER]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [asset_id, claim_token]
+              properties:
+                asset_id: { type: string, format: uuid }
+                claim_token: { type: string, writeOnly: true }
+      responses:
+        '200':
+          description: Artwork belongs to the authenticated customer
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DesignAsset' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '410': { description: Upload is invalid, expired, or already claimed by another customer }
 components:
   securitySchemes:
     bearerAuth:
@@ -1748,6 +1804,16 @@ components:
         application/json:
           schema: { $ref: '#/components/schemas/Error' }
   schemas:
+    DesignAsset:
+      type: object
+      required: [asset_id, name, content_type, size_bytes, storage_provider]
+      properties:
+        asset_id: { type: string, format: uuid }
+        name: { type: string }
+        content_type: { type: string }
+        size_bytes: { type: integer, format: int64 }
+        storage_provider: { type: string, enum: [DATABASE, S3] }
+        url: { type: string }
     GenericObject:
       type: object
       additionalProperties: true

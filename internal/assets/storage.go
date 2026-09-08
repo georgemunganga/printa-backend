@@ -35,7 +35,9 @@ type Asset struct {
 }
 type Storage interface {
 	Upload(context.Context, string, string, string, []byte) (*Asset, error)
+	UploadGuest(context.Context, string, string, []byte, string, time.Time) (*Asset, error)
 	Open(context.Context, string, string) (*Asset, error)
+	CleanupExpiredGuests(context.Context, int) (int64, error)
 }
 
 func NewStorage(db *sql.DB) (Storage, error) {
@@ -58,8 +60,25 @@ type databaseStorage struct{ db *sql.DB }
 func (s *databaseStorage) Upload(ctx context.Context, owner, name, contentType string, data []byte) (*Asset, error) {
 	return save(ctx, s.db, owner, name, contentType, data, "DATABASE", "")
 }
+func (s *databaseStorage) UploadGuest(ctx context.Context, name, contentType string, data []byte, tokenHash string, expiresAt time.Time) (*Asset, error) {
+	return saveGuestWithID(ctx, s.db, uuid.NewString(), name, contentType, data, "DATABASE", "", tokenHash, expiresAt)
+}
 func (s *databaseStorage) Open(ctx context.Context, id, owner string) (*Asset, error) {
 	return load(ctx, s.db, id, owner, true)
+}
+func (s *databaseStorage) CleanupExpiredGuests(ctx context.Context, limit int) (int64, error) {
+	result, err := s.db.ExecContext(ctx, `
+		DELETE FROM design_assets
+		WHERE id IN (
+			SELECT id FROM design_assets
+			WHERE owner_id IS NULL AND expires_at <= NOW()
+			ORDER BY expires_at
+			LIMIT $1
+		)`, limit)
+	if err != nil {
+		return 0, fmt.Errorf("delete expired guest assets: %w", err)
+	}
+	return result.RowsAffected()
 }
 
 type s3Storage struct {
@@ -75,6 +94,14 @@ func (s *s3Storage) Upload(ctx context.Context, owner, name, contentType string,
 		return nil, fmt.Errorf("upload S3 object: %w", err)
 	}
 	return saveWithID(ctx, s.db, id, owner, name, contentType, data, "S3", key)
+}
+func (s *s3Storage) UploadGuest(ctx context.Context, name, contentType string, data []byte, tokenHash string, expiresAt time.Time) (*Asset, error) {
+	id := uuid.NewString()
+	key := fmt.Sprintf("design-assets/guest/%s/%s", id, path.Base(name))
+	if _, err := s.client.PutObject(ctx, &s3.PutObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key), Body: bytes.NewReader(data), ContentType: aws.String(contentType), ServerSideEncryption: types.ServerSideEncryptionAes256}); err != nil {
+		return nil, fmt.Errorf("upload guest S3 object: %w", err)
+	}
+	return saveGuestWithID(ctx, s.db, id, name, contentType, data, "S3", key, tokenHash, expiresAt)
 }
 func (s *s3Storage) Open(ctx context.Context, id, owner string) (*Asset, error) {
 	a, err := load(ctx, s.db, id, owner, false)
@@ -94,6 +121,43 @@ func (s *s3Storage) Open(ctx context.Context, id, owner string) (*Asset, error) 
 		return nil, errors.New("stored object exceeds allowed design asset size")
 	}
 	return a, nil
+}
+func (s *s3Storage) CleanupExpiredGuests(ctx context.Context, limit int) (int64, error) {
+	rows, err := s.db.QueryContext(ctx, `
+		SELECT id, storage_key
+		FROM design_assets
+		WHERE owner_id IS NULL AND expires_at <= NOW() AND deleted_at IS NULL
+		ORDER BY expires_at
+		LIMIT $1`, limit)
+	if err != nil {
+		return 0, fmt.Errorf("list expired guest assets: %w", err)
+	}
+	defer rows.Close()
+	type expiredAsset struct{ id, key string }
+	var assets []expiredAsset
+	for rows.Next() {
+		var asset expiredAsset
+		if err := rows.Scan(&asset.id, &asset.key); err != nil {
+			return 0, fmt.Errorf("scan expired guest asset: %w", err)
+		}
+		assets = append(assets, asset)
+	}
+	if err := rows.Err(); err != nil {
+		return 0, fmt.Errorf("iterate expired guest assets: %w", err)
+	}
+	var deleted int64
+	for _, asset := range assets {
+		if _, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(asset.key)}); err != nil {
+			return deleted, fmt.Errorf("delete expired guest S3 object: %w", err)
+		}
+		result, err := s.db.ExecContext(ctx, `DELETE FROM design_assets WHERE id=$1 AND owner_id IS NULL AND expires_at <= NOW()`, asset.id)
+		if err != nil {
+			return deleted, fmt.Errorf("delete expired guest asset record: %w", err)
+		}
+		count, _ := result.RowsAffected()
+		deleted += count
+	}
+	return deleted, nil
 }
 
 func save(ctx context.Context, db *sql.DB, owner, name, contentType string, data []byte, provider, key string) (*Asset, error) {
@@ -116,6 +180,25 @@ func saveWithID(ctx context.Context, db *sql.DB, id, owner, name, contentType st
 		return nil, fmt.Errorf("record design asset: %w", err)
 	}
 	return &Asset{ID: id, OwnerID: owner, Name: path.Base(name), ContentType: contentType, Size: int64(len(data)), Provider: provider, Key: key}, nil
+}
+
+func saveGuestWithID(ctx context.Context, db *sql.DB, id, name, contentType string, data []byte, provider, key, tokenHash string, expiresAt time.Time) (*Asset, error) {
+	if strings.TrimSpace(name) == "" || strings.TrimSpace(contentType) == "" || len(tokenHash) != 64 || !expiresAt.After(time.Now()) {
+		return nil, errors.New("valid file metadata, guest token, and expiry are required")
+	}
+	if len(data) == 0 || len(data) > MaxSize {
+		return nil, fmt.Errorf("file must be between 1 byte and %d bytes", MaxSize)
+	}
+	hash := sha256.Sum256(data)
+	var content interface{} = data
+	if provider == "S3" {
+		content = nil
+	}
+	_, err := db.ExecContext(ctx, `INSERT INTO design_assets (id, owner_id, original_name, content_type, size_bytes, storage_provider, storage_key, content, checksum_sha256, guest_token_hash, expires_at) VALUES ($1,NULL,$2,$3,$4,$5,NULLIF($6,''),$7,$8,$9,$10)`, id, path.Base(name), contentType, len(data), provider, key, content, hex.EncodeToString(hash[:]), tokenHash, expiresAt)
+	if err != nil {
+		return nil, fmt.Errorf("record guest design asset: %w", err)
+	}
+	return &Asset{ID: id, Name: path.Base(name), ContentType: contentType, Size: int64(len(data)), Provider: provider, Key: key}, nil
 }
 func load(ctx context.Context, db *sql.DB, id, owner string, includeContent bool) (*Asset, error) {
 	a := &Asset{}

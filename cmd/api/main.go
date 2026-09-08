@@ -194,6 +194,9 @@ func main() {
 	// Customer storefront browsing
 	inventory.NewHandler(inventoryService, vendorService, userService).RegisterStorefrontRoutes(router)
 	delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterStorefrontRoutes(router)
+	// Guest artwork uses a short-lived bearer capability and must be claimed by
+	// an authenticated customer before an order can reference it.
+	assetHandler.RegisterPublicRoutes(router)
 	// Subscription plan catalogue contains public presentation data only.
 	billingHandler := billing.NewHandler(billingService, vendorService)
 	billingHandler.RegisterPublicRoutes(router)
