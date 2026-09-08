@@ -3,6 +3,7 @@ package main
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 )
 
@@ -34,5 +35,25 @@ func TestCORSMiddlewareAllowsAdminConsolePreflight(t *testing.T) {
 	}
 	if methods := response.Header().Get("Access-Control-Allow-Methods"); methods == "" {
 		t.Fatal("expected allowed HTTP methods header")
+	}
+}
+
+func TestCORSMiddlewareAllowsIdempotentOrderPreflight(t *testing.T) {
+	handler := corsMiddleware()(http.HandlerFunc(func(http.ResponseWriter, *http.Request) {
+		t.Fatal("preflight requests must not reach the next handler")
+	}))
+	request := httptest.NewRequest(http.MethodOptions, "/api/v1/orders", nil)
+	request.Header.Set("Origin", "https://app.printa.co.zm")
+	request.Header.Set("Access-Control-Request-Method", http.MethodPost)
+	request.Header.Set("Access-Control-Request-Headers", "authorization,content-type,idempotency-key")
+	response := httptest.NewRecorder()
+
+	handler.ServeHTTP(response, request)
+
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("expected status %d, got %d", http.StatusNoContent, response.Code)
+	}
+	if headers := strings.ToLower(response.Header().Get("Access-Control-Allow-Headers")); !strings.Contains(headers, "idempotency-key") {
+		t.Fatalf("expected idempotency-key in allowed headers, got %q", headers)
 	}
 }
