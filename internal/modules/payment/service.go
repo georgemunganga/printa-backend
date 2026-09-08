@@ -12,6 +12,7 @@ import (
 
 // Service defines payment business logic.
 type Service interface {
+	ListMethods() []PaymentMethod
 	Initiate(ctx context.Context, req InitiatePaymentRequest) (*PaymentTransaction, error)
 	GetByID(ctx context.Context, id string) (*PaymentTransaction, error)
 	Verify(ctx context.Context, id string) (*PaymentTransaction, error)
@@ -30,11 +31,39 @@ func NewService(repo Repository, gateways GatewayRegistry) Service {
 	return &service{repo: repo, gateways: gateways}
 }
 
+func (s *service) ListMethods() []PaymentMethod {
+	methods := []PaymentMethod{{Provider: ProviderCash, Label: "Cash", Enabled: true, Message: "Pay when you collect or receive your order."}}
+	for _, definition := range []PaymentMethod{
+		{Provider: ProviderMTNMomo, Label: "MTN MoMo", RequiresPhone: true, Message: "Coming soon"},
+		{Provider: ProviderAirtel, Label: "Airtel Money", RequiresPhone: true, Message: "Coming soon"},
+	} {
+		gateway, exists := s.gateways[definition.Provider]
+		if available, ok := gateway.(availabilityAwareGateway); exists && ok && available.Available() {
+			definition.Enabled = true
+			definition.Message = "A payment prompt will be sent to your phone."
+		}
+		methods = append(methods, definition)
+	}
+	return methods
+}
+
+func (s *service) methodEnabled(provider Provider) bool {
+	for _, method := range s.ListMethods() {
+		if method.Provider == provider {
+			return method.Enabled
+		}
+	}
+	return false
+}
+
 func (s *service) Initiate(ctx context.Context, req InitiatePaymentRequest) (*PaymentTransaction, error) {
 	// Validate provider
 	provider := Provider(strings.ToUpper(req.Provider))
 	if provider == "" {
 		return nil, fmt.Errorf("provider is required")
+	}
+	if !s.methodEnabled(provider) {
+		return nil, fmt.Errorf("payment method %s is not currently available", provider)
 	}
 
 	// Validate reference
@@ -87,10 +116,10 @@ func (s *service) Initiate(ctx context.Context, req InitiatePaymentRequest) (*Pa
 		IdempotencyKey: req.IdempotencyKey,
 	}
 
-	// For CASH and CARD, no gateway call needed — mark completed immediately
-	if provider == ProviderCash || provider == ProviderCard {
-		tx.Status = TxCompleted
-		tx.ProviderStatus = "COMPLETED"
+	// Cash is due at handoff. Recording the choice must not mark an unpaid online order as paid.
+	if provider == ProviderCash {
+		tx.Status = TxPending
+		tx.ProviderStatus = "AWAITING_CASH"
 		if err := s.repo.Create(ctx, tx); err != nil {
 			return nil, err
 		}

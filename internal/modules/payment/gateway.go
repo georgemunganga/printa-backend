@@ -22,6 +22,8 @@ type Gateway interface {
 // GatewayRegistry maps provider names to their Gateway implementations.
 type GatewayRegistry map[Provider]Gateway
 
+type availabilityAwareGateway interface{ Available() bool }
+
 // ── MTN Mobile Money Adapter ──────────────────────────────────────────────────
 // In production, replace the stub methods with actual MTN MoMo API calls.
 // MTN MoMo API docs: https://momodeveloper.mtn.com/
@@ -36,6 +38,9 @@ type mtnMomoGateway struct {
 func NewMTNMomoGateway(apiKey, apiSecret, baseURL, env string) Gateway {
 	return &mtnMomoGateway{apiKey: apiKey, apiSecret: apiSecret, baseURL: baseURL, env: env}
 }
+
+// Available remains false until this adapter performs real provider API calls.
+func (g *mtnMomoGateway) Available() bool { return false }
 
 func (g *mtnMomoGateway) Initiate(ctx context.Context, req *InitiatePaymentRequest) (*ProviderInitResponse, error) {
 	if req.PhoneNumber == "" {
@@ -105,6 +110,9 @@ type airtelMoneyGateway struct {
 func NewAirtelMoneyGateway(clientID, clientSecret, baseURL, env string) Gateway {
 	return &airtelMoneyGateway{clientID: clientID, clientSecret: clientSecret, baseURL: baseURL, env: env}
 }
+
+// Available remains false until this adapter performs real provider API calls.
+func (g *airtelMoneyGateway) Available() bool { return false }
 
 func (g *airtelMoneyGateway) Initiate(ctx context.Context, req *InitiatePaymentRequest) (*ProviderInitResponse, error) {
 	if req.PhoneNumber == "" {

@@ -55,3 +55,20 @@ func TestPlaceOrderIncludesServerDeliveryFeeInTotal(t *testing.T) {
 		t.Fatalf("delivery quote was not persisted on the created order")
 	}
 }
+
+func TestQuoteReturnsSameServerTotalsWithoutCreatingOrder(t *testing.T) {
+	repo := &deliveryTotalRepository{}
+	service := NewService(repo)
+	quote, err := service.Quote(context.Background(), "7e6ed121-374a-4da0-a4a6-2a2cbddaa721", []CartItem{{
+		VendorStoreProductID: "e428134c-a9c7-49e6-9ea7-562ef166924c", Quantity: 3,
+	}}, 0, 40, 4.8)
+	if err != nil {
+		t.Fatalf("Quote() error = %v", err)
+	}
+	if quote.Subtotal != 300 || quote.Tax != 48 || quote.DeliveryFee != 40 || quote.Total != 388 || quote.DeliveryDistanceKM != 4.8 {
+		t.Fatalf("unexpected quote: %+v", quote)
+	}
+	if repo.created != nil {
+		t.Fatal("Quote() persisted an order")
+	}
+}

@@ -35,6 +35,57 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	})
 }
 
+func (h *Handler) RegisterStorefrontRoutes(r chi.Router) {
+	r.Post("/api/v1/storefront/order-quote", h.quoteOrder)
+}
+
+func (h *Handler) quoteOrder(w http.ResponseWriter, r *http.Request) {
+	var req QuoteOrderRequest
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&req); err != nil {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "invalid quote request"})
+		return
+	}
+	method := strings.ToLower(strings.TrimSpace(req.Fulfilment.Method))
+	if method == "" {
+		method = "pickup"
+	}
+	var fee, distance float64
+	if method == "delivery" {
+		if strings.TrimSpace(req.Fulfilment.City) == "" || strings.TrimSpace(req.Fulfilment.Country) == "" || req.Fulfilment.Latitude == nil || req.Fulfilment.Longitude == nil {
+			respond(w, http.StatusBadRequest, map[string]string{"error": "delivery city, country, latitude, and longitude are required"})
+			return
+		}
+		var covered, hasZones bool
+		if err := h.db.QueryRowContext(r.Context(), `SELECT EXISTS(SELECT 1 FROM store_delivery_zones WHERE store_id=$1 AND is_active=true AND LOWER(city)=LOWER($2) AND LOWER(country)=LOWER($3)), EXISTS(SELECT 1 FROM store_delivery_zones WHERE store_id=$1)`, req.StoreID, req.Fulfilment.City, req.Fulfilment.Country).Scan(&covered, &hasZones); err != nil {
+			respond(w, http.StatusInternalServerError, map[string]string{"error": "delivery coverage could not be checked"})
+			return
+		}
+		if hasZones && !covered {
+			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": "the selected store does not cover this delivery location"})
+			return
+		}
+		pricingQuote, err := h.pricing.Quote(r.Context(), req.StoreID, *req.Fulfilment.Latitude, *req.Fulfilment.Longitude)
+		if err != nil {
+			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
+		fee, distance = pricingQuote.Fee, pricingQuote.DistanceKM
+	} else if method != "pickup" {
+		respond(w, http.StatusBadRequest, map[string]string{"error": "fulfilment method must be pickup or delivery"})
+		return
+	}
+	quote, err := h.service.Quote(r.Context(), req.StoreID, req.Items, req.Discount, fee, distance)
+	if err != nil {
+		code := http.StatusBadRequest
+		if strings.Contains(err.Error(), "unavailable") || strings.Contains(err.Error(), "not found") {
+			code = http.StatusUnprocessableEntity
+		}
+		respond(w, code, map[string]string{"error": err.Error()})
+		return
+	}
+	respond(w, http.StatusOK, quote)
+}
+
 func (h *Handler) placeOrder(w http.ResponseWriter, r *http.Request) {
 	var req PlaceOrderRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {

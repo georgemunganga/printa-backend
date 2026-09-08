@@ -39,6 +39,14 @@ func (h *Handler) RegisterWebhookRoutes(r chi.Router) {
 	})
 }
 
+func (h *Handler) RegisterStorefrontRoutes(r chi.Router) {
+	r.Get("/api/v1/storefront/payment-methods", h.listMethods)
+}
+
+func (h *Handler) listMethods(w http.ResponseWriter, r *http.Request) {
+	respond(w, http.StatusOK, h.service.ListMethods())
+}
+
 // RegisterProtectedRoutes registers payment endpoints that require JWT auth.
 func (h *Handler) RegisterProtectedRoutes(r chi.Router) {
 	r.Route("/api/v1/payments", func(r chi.Router) {

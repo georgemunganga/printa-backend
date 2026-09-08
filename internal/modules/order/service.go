@@ -11,6 +11,8 @@ import (
 
 // Service defines the order management business logic.
 type Service interface {
+	// Quote validates current catalogue prices and returns totals without creating an order.
+	Quote(ctx context.Context, storeID string, items []CartItem, discount, deliveryFee, deliveryDistanceKM float64) (*OrderQuote, error)
 	// PlaceOrder validates the cart, calculates totals, and persists the order atomically.
 	PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order, error)
 
@@ -40,6 +42,60 @@ type service struct {
 // NewService creates a new order service.
 func NewService(repo Repository) Service {
 	return &service{repo: repo}
+}
+
+func (s *service) Quote(ctx context.Context, storeID string, cartItems []CartItem, discount, deliveryFee, deliveryDistanceKM float64) (*OrderQuote, error) {
+	quote, _, err := s.calculate(ctx, storeID, cartItems, discount, deliveryFee, deliveryDistanceKM)
+	return quote, err
+}
+
+func (s *service) calculate(ctx context.Context, storeID string, cartItems []CartItem, discount, deliveryFee, deliveryDistanceKM float64) (*OrderQuote, []*OrderItem, error) {
+	if len(cartItems) == 0 {
+		return nil, nil, fmt.Errorf("order must contain at least one item")
+	}
+	if storeID == "" {
+		return nil, nil, fmt.Errorf("store_id is required")
+	}
+	if _, err := uuid.Parse(storeID); err != nil {
+		return nil, nil, fmt.Errorf("invalid store_id: %w", err)
+	}
+	var subtotal float64
+	items := make([]*OrderItem, 0, len(cartItems))
+	for _, item := range cartItems {
+		if item.Quantity <= 0 {
+			return nil, nil, fmt.Errorf("quantity must be > 0 for product %s", item.VendorStoreProductID)
+		}
+		productID, err := uuid.Parse(item.VendorStoreProductID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("invalid vendor_store_product_id: %w", err)
+		}
+		price, available, err := s.repo.GetProductPrice(ctx, storeID, item.VendorStoreProductID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("product %s not found in this store", item.VendorStoreProductID)
+		}
+		if !available {
+			return nil, nil, fmt.Errorf("product %s is currently unavailable", item.VendorStoreProductID)
+		}
+		lineTotal := price * float64(item.Quantity)
+		subtotal += lineTotal
+		items = append(items, &OrderItem{ID: uuid.New(), VendorStoreProductID: productID, Quantity: item.Quantity, UnitPrice: price, LineTotal: lineTotal, Customisation: item.Customisation})
+	}
+	if discount < 0 {
+		discount = 0
+	}
+	if deliveryFee < 0 {
+		deliveryFee = 0
+	}
+	taxable := subtotal - discount
+	if taxable < 0 {
+		taxable = 0
+	}
+	tax := taxable * 0.16
+	return &OrderQuote{
+		Subtotal: round2(subtotal), Discount: round2(discount), Tax: round2(tax),
+		DeliveryFee: round2(deliveryFee), DeliveryDistanceKM: round2(deliveryDistanceKM),
+		Total: round2(taxable + tax + deliveryFee), Currency: "ZMW",
+	}, items, nil
 }
 
 // validTransitions defines the allowed status state machine.
@@ -82,56 +138,10 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 		channel = ChannelOnline
 	}
 
-	// ── Build order items, validate stock & availability ──────────────────────
-	var items []*OrderItem
-	var subtotal float64
-
-	for _, ci := range req.Items {
-		if ci.Quantity <= 0 {
-			return nil, fmt.Errorf("quantity must be > 0 for product %s", ci.VendorStoreProductID)
-		}
-		price, available, err := s.repo.GetProductPrice(ctx, req.StoreID, ci.VendorStoreProductID)
-		if err != nil {
-			return nil, fmt.Errorf("product %s not found in this store", ci.VendorStoreProductID)
-		}
-		if !available {
-			return nil, fmt.Errorf("product %s is currently unavailable", ci.VendorStoreProductID)
-		}
-
-		pid, err := uuid.Parse(ci.VendorStoreProductID)
-		if err != nil {
-			return nil, fmt.Errorf("invalid vendor_store_product_id: %w", err)
-		}
-
-		lineTotal := price * float64(ci.Quantity)
-		subtotal += lineTotal
-
-		items = append(items, &OrderItem{
-			ID:                   uuid.New(),
-			VendorStoreProductID: pid,
-			Quantity:             ci.Quantity,
-			UnitPrice:            price,
-			LineTotal:            lineTotal,
-			Customisation:        ci.Customisation,
-		})
+	quote, items, err := s.calculate(ctx, req.StoreID, req.Items, req.Discount, req.DeliveryFee, req.DeliveryDistanceKM)
+	if err != nil {
+		return nil, err
 	}
-
-	// ── Calculate totals ──────────────────────────────────────────────────────
-	discount := req.Discount
-	if discount < 0 {
-		discount = 0
-	}
-	taxRate := 0.16 // 16% VAT — Zambia standard rate
-	taxable := subtotal - discount
-	if taxable < 0 {
-		taxable = 0
-	}
-	tax := taxable * taxRate
-	deliveryFee := req.DeliveryFee
-	if deliveryFee < 0 {
-		deliveryFee = 0
-	}
-	total := taxable + tax + deliveryFee
 
 	// ── Build order ───────────────────────────────────────────────────────────
 	o := &Order{
@@ -140,13 +150,13 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 		OrderNumber:        generateOrderNumber(),
 		Status:             StatusPending,
 		Channel:            channel,
-		Subtotal:           round2(subtotal),
-		Discount:           round2(discount),
-		Tax:                round2(tax),
-		DeliveryFee:        round2(deliveryFee),
-		DeliveryDistanceKM: round2(req.DeliveryDistanceKM),
-		Total:              round2(total),
-		Currency:           "ZMW",
+		Subtotal:           quote.Subtotal,
+		Discount:           quote.Discount,
+		Tax:                quote.Tax,
+		DeliveryFee:        quote.DeliveryFee,
+		DeliveryDistanceKM: quote.DeliveryDistanceKM,
+		Total:              quote.Total,
+		Currency:           quote.Currency,
 		Notes:              req.Notes,
 		DeliveryAddress:    req.DeliveryAddress,
 		IdempotencyKey:     req.IdempotencyKey,

@@ -74,6 +74,32 @@ type CartItem struct {
 	Customisation        json.RawMessage `json:"customisation,omitempty"`
 }
 
+// OrderQuote is the server-authoritative price shown before an order is created.
+type OrderQuote struct {
+	Subtotal           float64 `json:"subtotal"`
+	Discount           float64 `json:"discount"`
+	Tax                float64 `json:"tax"`
+	DeliveryFee        float64 `json:"delivery_fee"`
+	DeliveryDistanceKM float64 `json:"delivery_distance_km,omitempty"`
+	Total              float64 `json:"total"`
+	Currency           string  `json:"currency"`
+}
+
+type QuoteFulfilment struct {
+	Method    string   `json:"method"`
+	City      string   `json:"city,omitempty"`
+	Country   string   `json:"country,omitempty"`
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
+}
+
+type QuoteOrderRequest struct {
+	StoreID    string          `json:"store_id"`
+	Items      []CartItem      `json:"items"`
+	Discount   float64         `json:"discount,omitempty"`
+	Fulfilment QuoteFulfilment `json:"fulfilment"`
+}
+
 // PlaceOrderRequest is the payload for creating a new order.
 type PlaceOrderRequest struct {
 	StoreID            string          `json:"store_id"`

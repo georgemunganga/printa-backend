@@ -195,6 +195,7 @@ func main() {
 	// Customer storefront browsing
 	inventory.NewHandler(inventoryService, vendorService, userService).RegisterStorefrontRoutes(router)
 	delivery.NewZoneHandler(zoneService, inventoryService, vendorService, deliveryPricingService).RegisterStorefrontRoutes(router)
+	order.NewHandler(orderService, db, deliveryPricingService).RegisterStorefrontRoutes(router)
 	// Guest artwork uses a short-lived bearer capability and must be claimed by
 	// an authenticated customer before an order can reference it.
 	assetHandler.RegisterPublicRoutes(router)
@@ -203,6 +204,7 @@ func main() {
 	billingHandler.RegisterPublicRoutes(router)
 	// Payment webhooks (provider callback boundary, no JWT)
 	payment.NewHandler(paymentService, vendorService, orderService).RegisterWebhookRoutes(router)
+	payment.NewHandler(paymentService, vendorService, orderService).RegisterStorefrontRoutes(router)
 	// Signed collection-provider callback receiver. Subscription activation still
 	// re-queries the provider and validates the server-locked checkout amount.
 	lenco.NewHandlerFromEnv(db, func(ctx context.Context, reference string) error {
