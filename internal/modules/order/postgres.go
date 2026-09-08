@@ -24,10 +24,10 @@ func (r *postgresRepo) CreateOrder(ctx context.Context, o *Order) error {
 	_, err = tx.ExecContext(ctx, `
 		INSERT INTO orders
 		  (id, store_id, customer_id, order_number, status, channel,
-		   subtotal, discount, tax, total, currency, notes, delivery_address, metadata, idempotency_key)
-		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,NULLIF($15,''))`,
+		   subtotal, discount, tax, delivery_fee, delivery_distance_km, total, currency, notes, delivery_address, metadata, idempotency_key)
+		VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,NULLIF($17,''))`,
 		o.ID, o.StoreID, o.CustomerID, o.OrderNumber, o.Status, o.Channel,
-		o.Subtotal, o.Discount, o.Tax, o.Total, o.Currency, o.Notes,
+		o.Subtotal, o.Discount, o.Tax, o.DeliveryFee, nullableDistance(o.DeliveryDistanceKM), o.Total, o.Currency, o.Notes,
 		nullableJSON(o.DeliveryAddress), nullableJSON(o.Metadata), o.IdempotencyKey)
 	if err != nil {
 		return fmt.Errorf("insert order: %w", err)
@@ -52,7 +52,7 @@ func (r *postgresRepo) CreateOrder(ctx context.Context, o *Order) error {
 func (r *postgresRepo) GetByIdempotencyKey(ctx context.Context, key string) (*Order, error) {
 	o, err := r.scanOrder(r.db.QueryRowContext(ctx, `
 		SELECT id,store_id,customer_id,order_number,status,channel,
-		       subtotal,discount,tax,total,currency,notes,delivery_address,metadata,created_at,updated_at
+		       subtotal,discount,tax,delivery_fee,delivery_distance_km,total,currency,notes,delivery_address,metadata,created_at,updated_at
 		FROM orders WHERE idempotency_key=$1`, key))
 	if err != nil {
 		return nil, err
@@ -68,7 +68,7 @@ func (r *postgresRepo) GetOrderByID(ctx context.Context, id string) (*Order, err
 	}
 	o, err := r.scanOrder(r.db.QueryRowContext(ctx, `
 		SELECT id,store_id,customer_id,order_number,status,channel,
-		       subtotal,discount,tax,total,currency,notes,delivery_address,metadata,created_at,updated_at
+		       subtotal,discount,tax,delivery_fee,delivery_distance_km,total,currency,notes,delivery_address,metadata,created_at,updated_at
 		FROM orders WHERE id=$1`, uid))
 	if err != nil {
 		return nil, err
@@ -80,7 +80,7 @@ func (r *postgresRepo) GetOrderByID(ctx context.Context, id string) (*Order, err
 func (r *postgresRepo) GetOrderByNumber(ctx context.Context, orderNumber string) (*Order, error) {
 	o, err := r.scanOrder(r.db.QueryRowContext(ctx, `
 		SELECT id,store_id,customer_id,order_number,status,channel,
-		       subtotal,discount,tax,total,currency,notes,delivery_address,metadata,created_at,updated_at
+		       subtotal,discount,tax,delivery_fee,delivery_distance_km,total,currency,notes,delivery_address,metadata,created_at,updated_at
 		FROM orders WHERE order_number=$1`, orderNumber))
 	if err != nil {
 		return nil, err
@@ -91,7 +91,7 @@ func (r *postgresRepo) GetOrderByNumber(ctx context.Context, orderNumber string)
 
 func (r *postgresRepo) ListOrdersByStore(ctx context.Context, storeID string, status string) ([]*Order, error) {
 	query := `SELECT id,store_id,customer_id,order_number,status,channel,
-	                 subtotal,discount,tax,total,currency,notes,delivery_address,metadata,created_at,updated_at
+	                 subtotal,discount,tax,delivery_fee,delivery_distance_km,total,currency,notes,delivery_address,metadata,created_at,updated_at
 	          FROM orders WHERE store_id=$1`
 	args := []interface{}{storeID}
 	if status != "" {
@@ -105,7 +105,7 @@ func (r *postgresRepo) ListOrdersByStore(ctx context.Context, storeID string, st
 func (r *postgresRepo) ListOrdersByCustomer(ctx context.Context, customerID string) ([]*Order, error) {
 	orders, err := r.queryOrders(ctx, `
 		SELECT id,store_id,customer_id,order_number,status,channel,
-		       subtotal,discount,tax,total,currency,notes,delivery_address,metadata,created_at,updated_at
+		       subtotal,discount,tax,delivery_fee,delivery_distance_km,total,currency,notes,delivery_address,metadata,created_at,updated_at
 		FROM orders WHERE customer_id=$1 ORDER BY created_at DESC`, customerID)
 	if err != nil {
 		return nil, err
@@ -141,9 +141,10 @@ func (r *postgresRepo) scanOrder(row *sql.Row) (*Order, error) {
 	o := &Order{}
 	var customerID sql.NullString
 	var deliveryAddr, metadata []byte
+	var deliveryDistance sql.NullFloat64
 	err := row.Scan(
 		&o.ID, &o.StoreID, &customerID, &o.OrderNumber, &o.Status, &o.Channel,
-		&o.Subtotal, &o.Discount, &o.Tax, &o.Total, &o.Currency, &o.Notes,
+		&o.Subtotal, &o.Discount, &o.Tax, &o.DeliveryFee, &deliveryDistance, &o.Total, &o.Currency, &o.Notes,
 		&deliveryAddr, &metadata, &o.CreatedAt, &o.UpdatedAt)
 	if err != nil {
 		return nil, err
@@ -154,6 +155,9 @@ func (r *postgresRepo) scanOrder(row *sql.Row) (*Order, error) {
 	}
 	o.DeliveryAddress = deliveryAddr
 	o.Metadata = metadata
+	if deliveryDistance.Valid {
+		o.DeliveryDistanceKM = deliveryDistance.Float64
+	}
 	return o, nil
 }
 
@@ -168,9 +172,10 @@ func (r *postgresRepo) queryOrders(ctx context.Context, query string, args ...in
 		o := &Order{}
 		var customerID sql.NullString
 		var deliveryAddr, metadata []byte
+		var deliveryDistance sql.NullFloat64
 		if err := rows.Scan(
 			&o.ID, &o.StoreID, &customerID, &o.OrderNumber, &o.Status, &o.Channel,
-			&o.Subtotal, &o.Discount, &o.Tax, &o.Total, &o.Currency, &o.Notes,
+			&o.Subtotal, &o.Discount, &o.Tax, &o.DeliveryFee, &deliveryDistance, &o.Total, &o.Currency, &o.Notes,
 			&deliveryAddr, &metadata, &o.CreatedAt, &o.UpdatedAt); err != nil {
 			return nil, err
 		}
@@ -180,6 +185,9 @@ func (r *postgresRepo) queryOrders(ctx context.Context, query string, args ...in
 		}
 		o.DeliveryAddress = deliveryAddr
 		o.Metadata = metadata
+		if deliveryDistance.Valid {
+			o.DeliveryDistanceKM = deliveryDistance.Float64
+		}
 		orders = append(orders, o)
 	}
 	return orders, nil
@@ -218,4 +226,11 @@ func nullableJSON(b []byte) interface{} {
 		return nil
 	}
 	return b
+}
+
+func nullableDistance(distance float64) interface{} {
+	if distance <= 0 {
+		return nil
+	}
+	return distance
 }

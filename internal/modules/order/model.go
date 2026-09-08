@@ -30,24 +30,26 @@ const (
 
 // Order represents a customer's print order at a store.
 type Order struct {
-	ID              uuid.UUID       `json:"id"`
-	StoreID         uuid.UUID       `json:"store_id"`
-	CustomerID      *uuid.UUID      `json:"customer_id,omitempty"` // nil for walk-in POS orders
-	OrderNumber     string          `json:"order_number"`
-	Status          OrderStatus     `json:"status"`
-	Channel         OrderChannel    `json:"channel"`
-	Subtotal        float64         `json:"subtotal"`
-	Discount        float64         `json:"discount"`
-	Tax             float64         `json:"tax"`
-	Total           float64         `json:"total"`
-	Currency        string          `json:"currency"`
-	Notes           string          `json:"notes,omitempty"`
-	DeliveryAddress json.RawMessage `json:"delivery_address,omitempty"`
-	Metadata        json.RawMessage `json:"metadata,omitempty"`
-	IdempotencyKey  string          `json:"-"`
-	Items           []*OrderItem    `json:"items,omitempty"`
-	CreatedAt       time.Time       `json:"created_at"`
-	UpdatedAt       time.Time       `json:"updated_at"`
+	ID                 uuid.UUID       `json:"id"`
+	StoreID            uuid.UUID       `json:"store_id"`
+	CustomerID         *uuid.UUID      `json:"customer_id,omitempty"` // nil for walk-in POS orders
+	OrderNumber        string          `json:"order_number"`
+	Status             OrderStatus     `json:"status"`
+	Channel            OrderChannel    `json:"channel"`
+	Subtotal           float64         `json:"subtotal"`
+	Discount           float64         `json:"discount"`
+	Tax                float64         `json:"tax"`
+	DeliveryFee        float64         `json:"delivery_fee"`
+	DeliveryDistanceKM float64         `json:"delivery_distance_km,omitempty"`
+	Total              float64         `json:"total"`
+	Currency           string          `json:"currency"`
+	Notes              string          `json:"notes,omitempty"`
+	DeliveryAddress    json.RawMessage `json:"delivery_address,omitempty"`
+	Metadata           json.RawMessage `json:"metadata,omitempty"`
+	IdempotencyKey     string          `json:"-"`
+	Items              []*OrderItem    `json:"items,omitempty"`
+	CreatedAt          time.Time       `json:"created_at"`
+	UpdatedAt          time.Time       `json:"updated_at"`
 }
 
 // OrderItem is a single line item within an order.
@@ -74,14 +76,16 @@ type CartItem struct {
 
 // PlaceOrderRequest is the payload for creating a new order.
 type PlaceOrderRequest struct {
-	StoreID         string          `json:"store_id"`
-	CustomerID      string          `json:"customer_id,omitempty"` // optional for POS
-	Channel         string          `json:"channel"`
-	Items           []CartItem      `json:"items"`
-	Notes           string          `json:"notes,omitempty"`
-	DeliveryAddress json.RawMessage `json:"delivery_address,omitempty"`
-	Discount        float64         `json:"discount,omitempty"`
-	IdempotencyKey  string          `json:"-"`
+	StoreID            string          `json:"store_id"`
+	CustomerID         string          `json:"customer_id,omitempty"` // optional for POS
+	Channel            string          `json:"channel"`
+	Items              []CartItem      `json:"items"`
+	Notes              string          `json:"notes,omitempty"`
+	DeliveryAddress    json.RawMessage `json:"delivery_address,omitempty"`
+	Discount           float64         `json:"discount,omitempty"`
+	DeliveryFee        float64         `json:"-"`
+	DeliveryDistanceKM float64         `json:"-"`
+	IdempotencyKey     string          `json:"-"`
 }
 
 // UpdateStatusRequest is the payload for advancing an order's status.

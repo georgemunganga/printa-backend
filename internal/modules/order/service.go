@@ -127,24 +127,30 @@ func (s *service) PlaceOrder(ctx context.Context, req PlaceOrderRequest) (*Order
 		taxable = 0
 	}
 	tax := taxable * taxRate
-	total := taxable + tax
+	deliveryFee := req.DeliveryFee
+	if deliveryFee < 0 {
+		deliveryFee = 0
+	}
+	total := taxable + tax + deliveryFee
 
 	// ── Build order ───────────────────────────────────────────────────────────
 	o := &Order{
-		ID:              uuid.New(),
-		StoreID:         storeID,
-		OrderNumber:     generateOrderNumber(),
-		Status:          StatusPending,
-		Channel:         channel,
-		Subtotal:        round2(subtotal),
-		Discount:        round2(discount),
-		Tax:             round2(tax),
-		Total:           round2(total),
-		Currency:        "ZMW",
-		Notes:           req.Notes,
-		DeliveryAddress: req.DeliveryAddress,
-		IdempotencyKey:  req.IdempotencyKey,
-		Items:           items,
+		ID:                 uuid.New(),
+		StoreID:            storeID,
+		OrderNumber:        generateOrderNumber(),
+		Status:             StatusPending,
+		Channel:            channel,
+		Subtotal:           round2(subtotal),
+		Discount:           round2(discount),
+		Tax:                round2(tax),
+		DeliveryFee:        round2(deliveryFee),
+		DeliveryDistanceKM: round2(req.DeliveryDistanceKM),
+		Total:              round2(total),
+		Currency:           "ZMW",
+		Notes:              req.Notes,
+		DeliveryAddress:    req.DeliveryAddress,
+		IdempotencyKey:     req.IdempotencyKey,
+		Items:              items,
 	}
 
 	if req.CustomerID != "" {

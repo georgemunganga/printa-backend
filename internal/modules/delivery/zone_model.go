@@ -28,14 +28,17 @@ type UpsertZoneRequest struct {
 
 // EligibilityRequest describes the saved delivery location city used for a store coverage lookup.
 type EligibilityRequest struct {
-	City    string `json:"city"`
-	Country string `json:"country"`
+	City      string   `json:"city"`
+	Country   string   `json:"country"`
+	Latitude  *float64 `json:"latitude,omitempty"`
+	Longitude *float64 `json:"longitude,omitempty"`
 }
 
-// EligibilityResponse is intentionally limited to coverage status; it contains no fee, ETA, or routing assertion.
+// EligibilityResponse includes a server quote when exact destination coordinates are supplied.
 type EligibilityResponse struct {
-	Eligible bool   `json:"eligible"`
-	Code     string `json:"code"`
-	Message  string `json:"message"`
-	Zone     *Zone  `json:"zone,omitempty"`
+	Eligible bool        `json:"eligible"`
+	Code     string      `json:"code"`
+	Message  string      `json:"message"`
+	Zone     *Zone       `json:"zone,omitempty"`
+	Quote    *PriceQuote `json:"quote,omitempty"`
 }

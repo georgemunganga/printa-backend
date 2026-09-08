@@ -96,6 +96,7 @@ func main() {
 	deliveryService := delivery.NewService(deliveryRepo)
 	zoneRepo := delivery.NewZonePostgresRepository(db)
 	zoneService := delivery.NewZoneService(zoneRepo)
+	deliveryPricingService := delivery.NewPricingService(db)
 
 	attendanceRepo := attendance.NewPostgresRepository(db)
 
@@ -193,7 +194,7 @@ func main() {
 	attendanceHandler.RegisterPublicRoutes(router)
 	// Customer storefront browsing
 	inventory.NewHandler(inventoryService, vendorService, userService).RegisterStorefrontRoutes(router)
-	delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterStorefrontRoutes(router)
+	delivery.NewZoneHandler(zoneService, inventoryService, vendorService, deliveryPricingService).RegisterStorefrontRoutes(router)
 	// Guest artwork uses a short-lived bearer capability and must be claimed by
 	// an authenticated customer before an order can reference it.
 	assetHandler.RegisterPublicRoutes(router)
@@ -234,11 +235,11 @@ func main() {
 		submission.NewHandler(submissionService).RegisterRoutes(r)
 
 		// Orders
-		order.NewHandler(orderService, db).RegisterRoutes(r)
+		order.NewHandler(orderService, db, deliveryPricingService).RegisterRoutes(r)
 
 		// Customer delivery locations and vendor delivery zones
 		delivery.NewHandler(deliveryService).RegisterRoutes(r)
-		delivery.NewZoneHandler(zoneService, inventoryService, vendorService).RegisterRoutes(r)
+		delivery.NewZoneHandler(zoneService, inventoryService, vendorService, deliveryPricingService).RegisterRoutes(r)
 
 		// Order-scoped in-app conversations
 		conversation.NewHandler(conversationService, orderService, inventoryService, vendorService, assetHandler.Storage()).RegisterRoutes(r)

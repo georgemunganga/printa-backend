@@ -8,6 +8,7 @@ import (
 	"strings"
 
 	"github.com/georgemunganga/printa-backend/internal/middleware"
+	"github.com/georgemunganga/printa-backend/internal/modules/delivery"
 	"github.com/go-chi/chi/v5"
 )
 
@@ -15,9 +16,12 @@ import (
 type Handler struct {
 	service Service
 	db      *sql.DB
+	pricing delivery.PricingService
 }
 
-func NewHandler(service Service, db *sql.DB) *Handler { return &Handler{service: service, db: db} }
+func NewHandler(service Service, db *sql.DB, pricing delivery.PricingService) *Handler {
+	return &Handler{service: service, db: db, pricing: pricing}
+}
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/orders", func(r chi.Router) {
@@ -135,6 +139,10 @@ type canonicalCustomerDelivery struct {
 	Latitude       *float64 `json:"latitude,omitempty"`
 	Longitude      *float64 `json:"longitude,omitempty"`
 	Coverage       string   `json:"coverage"`
+	DistanceKM     float64  `json:"distance_km"`
+	Fee            float64  `json:"fee"`
+	Currency       string   `json:"currency"`
+	PricingRuleID  string   `json:"pricing_rule_id"`
 }
 
 // validateCustomerDelivery accepts either a customer-owned saved location or a validated one-time address. The order
@@ -208,8 +216,21 @@ func (h *Handler) validateCustomerDelivery(r *http.Request, req *PlaceOrderReque
 	if !covered {
 		return fmt.Errorf("the selected store does not cover this delivery location")
 	}
+	if snapshot.Latitude == nil || snapshot.Longitude == nil {
+		return fmt.Errorf("exact delivery coordinates are required to calculate the delivery fee")
+	}
+	quote, err := h.pricing.Quote(r.Context(), req.StoreID, *snapshot.Latitude, *snapshot.Longitude)
+	if err != nil {
+		return err
+	}
 	snapshot.Method = "delivery"
 	snapshot.Coverage = "CITY_LEVEL"
+	snapshot.DistanceKM = quote.DistanceKM
+	snapshot.Fee = quote.Fee
+	snapshot.Currency = quote.Currency
+	snapshot.PricingRuleID = quote.RuleID
+	req.DeliveryFee = quote.Fee
+	req.DeliveryDistanceKM = quote.DistanceKM
 	canonical, err := json.Marshal(snapshot)
 	if err != nil {
 		return err

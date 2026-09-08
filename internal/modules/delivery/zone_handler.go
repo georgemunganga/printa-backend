@@ -17,10 +17,11 @@ type ZoneHandler struct {
 	service          ZoneService
 	inventoryService inventory.Service
 	vendorService    vendor.Service
+	pricingService   PricingService
 }
 
-func NewZoneHandler(service ZoneService, inventoryService inventory.Service, vendorService vendor.Service) *ZoneHandler {
-	return &ZoneHandler{service: service, inventoryService: inventoryService, vendorService: vendorService}
+func NewZoneHandler(service ZoneService, inventoryService inventory.Service, vendorService vendor.Service, pricingService PricingService) *ZoneHandler {
+	return &ZoneHandler{service: service, inventoryService: inventoryService, vendorService: vendorService, pricingService: pricingService}
 }
 
 func (h *ZoneHandler) RegisterRoutes(r chi.Router) {
@@ -115,6 +116,13 @@ func (h *ZoneHandler) checkEligibility(w http.ResponseWriter, r *http.Request) {
 	if err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
 		return
+	}
+	if result.Eligible && req.Latitude != nil && req.Longitude != nil {
+		result.Quote, err = h.pricingService.Quote(r.Context(), storeID, *req.Latitude, *req.Longitude)
+		if err != nil {
+			respond(w, http.StatusUnprocessableEntity, map[string]string{"error": err.Error()})
+			return
+		}
 	}
 	respond(w, http.StatusOK, result)
 }
