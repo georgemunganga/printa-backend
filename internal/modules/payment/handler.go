@@ -51,6 +51,7 @@ func (h *Handler) listMethods(w http.ResponseWriter, r *http.Request) {
 func (h *Handler) RegisterProtectedRoutes(r chi.Router) {
 	r.Route("/api/v1/payments", func(r chi.Router) {
 		r.Post("/", h.initiate)
+		r.Get("/order/{order_id}", h.listForCustomerOrder)
 		r.Get("/{id}", h.getByID)
 		r.Post("/{id}/verify", h.verify)
 		r.Post("/{id}/refund", h.refund)
@@ -107,11 +108,60 @@ func (h *Handler) initiate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) getByID(w http.ResponseWriter, r *http.Request) {
-	tx, ok := h.requirePaymentAccess(w, r, chi.URLParam(r, "id"))
-	if !ok {
+	id := chi.URLParam(r, "id")
+	tx, err := h.service.GetByID(r.Context(), id)
+	if err != nil {
+		respond(w, http.StatusNotFound, map[string]string{"error": "payment transaction not found"})
+		return
+	}
+	if tx.ReferenceType == RefOrder && h.ownsCustomerOrder(r, tx.ReferenceID.String()) {
+		respond(w, http.StatusOK, tx)
+		return
+	}
+	if !h.canReadVendorPayment(w, r, tx) {
 		return
 	}
 	respond(w, http.StatusOK, tx)
+}
+
+func (h *Handler) listForCustomerOrder(w http.ResponseWriter, r *http.Request) {
+	orderID := chi.URLParam(r, "order_id")
+	if !h.ownsCustomerOrder(r, orderID) {
+		respond(w, http.StatusNotFound, map[string]string{"error": "order not found"})
+		return
+	}
+	txs, err := h.service.ListByReference(r.Context(), RefOrder, orderID)
+	if err != nil {
+		respond(w, http.StatusInternalServerError, map[string]string{"error": "unable to load order payments"})
+		return
+	}
+	if txs == nil {
+		txs = make([]*PaymentTransaction, 0)
+	}
+	respond(w, http.StatusOK, txs)
+}
+
+func (h *Handler) ownsCustomerOrder(r *http.Request, orderID string) bool {
+	userID := middleware.GetUserID(r)
+	if userID == "" {
+		return false
+	}
+	ownedOrder, err := h.orderService.GetOrder(r.Context(), orderID)
+	return err == nil && ownedOrder != nil && ownedOrder.CustomerID != nil && ownedOrder.CustomerID.String() == userID
+}
+
+func (h *Handler) canReadVendorPayment(w http.ResponseWriter, r *http.Request, tx *PaymentTransaction) bool {
+	if middleware.GetRole(r) == middleware.RoleAdmin {
+		return true
+	}
+	if tx.VendorID == nil {
+		respond(w, http.StatusForbidden, map[string]string{"error": "payment is not accessible to this account"})
+		return false
+	}
+	if !h.requireVendorAccess(w, r, tx.VendorID.String()) {
+		return false
+	}
+	return true
 }
 
 func (h *Handler) verify(w http.ResponseWriter, r *http.Request) {

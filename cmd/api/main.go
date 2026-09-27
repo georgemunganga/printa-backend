@@ -176,6 +176,7 @@ func main() {
 	router.Get("/livez", livenessCheck())
 	router.Get("/readyz", readinessCheck(db))
 	router.Get("/healthz", readinessCheck(db))
+	router.Get("/api/v1/mobile/config", mobileConfig)
 	router.Get("/api/v1/openapi.yaml", apidocs.OpenAPIHandler)
 	router.Get("/api/v1/docs", apidocs.DocsHandler)
 	// User registration
