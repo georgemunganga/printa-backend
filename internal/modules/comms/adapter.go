@@ -270,8 +270,7 @@ func (a *PushAdapter) Channel() ChannelType { return ChannelPush }
 
 func (a *PushAdapter) Send(ctx context.Context, msg Message) (string, error) {
 	if a.FCMServerKey == "" {
-		fmt.Printf("[PUSH SANDBOX] To: %s | Title: %s | Body: %s\n", msg.Recipient, msg.Subject, msg.Body)
-		return fmt.Sprintf("push-sandbox-%d", time.Now().UnixNano()), nil
+		return "", errors.New("push delivery is not configured")
 	}
 	payload := map[string]interface{}{
 		"to": msg.Recipient,
@@ -290,12 +289,23 @@ func (a *PushAdapter) Send(ctx context.Context, msg Message) (string, error) {
 		return "", fmt.Errorf("fcm: %w", err)
 	}
 	defer resp.Body.Close()
-	var result map[string]interface{}
-	json.NewDecoder(resp.Body).Decode(&result)
-	if id, ok := result["message_id"].(string); ok {
-		return id, nil
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("push provider rejected request: HTTP %d", resp.StatusCode)
 	}
-	return fmt.Sprintf("fcm-%d", time.Now().UnixNano()), nil
+	var result struct {
+		Success int `json:"success"`
+		Results []struct {
+			MessageID string `json:"message_id"`
+			Error     string `json:"error"`
+		} `json:"results"`
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&result); err != nil {
+		return "", errors.New("push provider returned an invalid response")
+	}
+	if result.Success != 1 || len(result.Results) != 1 || result.Results[0].MessageID == "" || result.Results[0].Error != "" {
+		return "", errors.New("push provider did not accept the notification")
+	}
+	return result.Results[0].MessageID, nil
 }
 
 // ─── WhatsApp Adapter (Twilio / Meta Cloud API) ──────────────────────────────
