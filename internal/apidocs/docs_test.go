@@ -26,6 +26,8 @@ func TestOpenAPIHandlerServesContract(t *testing.T) {
 		"/api/v1/auth/login:",
 		"/api/v1/orders:",
 		"/api/v1/comms/send:",
+		"/api/v1/customer/payments:",
+		"/api/v1/customer/conversations/orders/{order_id}/messages:",
 		"bearerAuth:",
 	} {
 		if !strings.Contains(body, required) {

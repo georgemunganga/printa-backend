@@ -1700,6 +1700,152 @@ paths:
               schema: { $ref: '#/components/schemas/DesignAsset' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '410': { description: Upload is invalid, expired, or already claimed by another customer }
+  /api/v1/customer/payments:
+    post:
+      tags:
+      - Payments
+      summary: Pay for an order owned by the authenticated customer
+      description: Available to every authenticated account role. Only owned ORDER references are accepted; saved
+        order total and currency override client values. Vendor operating status does not block personal purchases.
+        Vendor billing, verification and refunds are not exposed here.
+      parameters:
+      - $ref: '#/components/parameters/IdempotencyKey'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - provider
+              - reference_type
+              - reference_id
+              properties:
+                provider:
+                  type: string
+                  description: Use an enabled provider returned by storefront/payment-methods.
+                reference_type:
+                  type: string
+                  enum:
+                  - ORDER
+                reference_id:
+                  type: string
+                  format: uuid
+                phone_number:
+                  type: string
+                idempotency_key:
+                  type: string
+      responses:
+        '201':
+          $ref: '#/components/responses/ObjectCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+  /api/v1/customer/payments/order/{order_id}:
+    parameters:
+    - name: order_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Payments
+      summary: Read payments for an order owned by the authenticated customer
+      responses: &id001
+        '200':
+          $ref: '#/components/responses/ArrayResponse'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/customer/conversations/orders/{order_id}/messages:
+    parameters:
+    - name: order_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Orders
+      summary: Read customer-owned order messages
+      description: Ownership is required for every account role, including admin and vendor. Returns customer-scoped
+        authenticated attachment URLs.
+      responses: *id001
+    post:
+      tags:
+      - Orders
+      summary: Send a message for a customer-owned order
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                body:
+                  type: string
+                  maxLength: 5000
+                asset_ids:
+                  type: array
+                  maxItems: 8
+                  uniqueItems: true
+                  items:
+                    type: string
+                    format: uuid
+              description: Supply non-empty text or at least one uploaded attachment owned by the sender.
+      responses:
+        '201':
+          $ref: '#/components/responses/ObjectCreated'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v1/customer/conversations/orders/{order_id}/messages/{message_id}/attachments/{asset_id}:
+    parameters:
+    - name: order_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: message_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    - name: asset_id
+      in: path
+      required: true
+      schema:
+        type: string
+        format: uuid
+    get:
+      tags:
+      - Orders
+      summary: Download an attachment from a customer-owned order
+      responses:
+        '200':
+          description: Original attachment bytes; media type follows the stored file.
+          content:
+            application/octet-stream:
+              schema:
+                type: string
+                format: binary
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+
 components:
   securitySchemes:
     bearerAuth:
