@@ -26,7 +26,11 @@ func RequireOperationalVendor(service Service, vendorService vendor.Service) fun
 				return
 			}
 			if !status.Operational {
-				respondJSON(w, http.StatusLocked, status)
+				respondJSON(w, http.StatusLocked, struct {
+					*OperatingStatus
+					Code    string `json:"code"`
+					Message string `json:"message"`
+				}{status, "VENDOR_OPERATIONS_LOCKED", "Store operations are paused. Check your vendor approval and subscription, or contact support."})
 				return
 			}
 			next.ServeHTTP(w, r)

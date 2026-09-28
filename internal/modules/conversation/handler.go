@@ -41,6 +41,26 @@ func (h *Handler) RegisterRoutes(r chi.Router) {
 	})
 }
 
+// The dedicated customer route checks ownership for every role before invoking
+// the shared handlers. A paused vendor can discuss their own purchases only.
+func (h *Handler) RegisterCustomerRoutes(r chi.Router) {
+	r.Route("/api/v1/customer/conversations/orders/{order_id}", func(r chi.Router) {
+		r.Use(func(next http.Handler) http.Handler {
+			return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				purchase, err := h.orderService.GetOrder(r.Context(), chi.URLParam(r, "order_id"))
+				if err != nil || purchase == nil || purchase.CustomerID == nil || purchase.CustomerID.String() != middleware.GetUserID(r) {
+					respond(w, http.StatusNotFound, map[string]string{"error": "order not found"})
+					return
+				}
+				next.ServeHTTP(w, r)
+			})
+		})
+		r.Get("/messages", h.listMessages)
+		r.Post("/messages", h.sendMessage)
+		r.Get("/messages/{message_id}/attachments/{asset_id}", h.getAttachment)
+	})
+}
+
 func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 	orderID := chi.URLParam(r, "order_id")
 	if !h.requireOrderAccess(w, r, orderID) {
@@ -52,7 +72,7 @@ func (h *Handler) listMessages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	for _, message := range messages {
-		h.withAttachmentURLs(orderID, message)
+		h.withAttachmentURLs(r, orderID, message)
 	}
 	respond(w, http.StatusOK, messages)
 }
@@ -80,13 +100,17 @@ func (h *Handler) sendMessage(w http.ResponseWriter, r *http.Request) {
 		}
 		message.Attachments[index] = details
 	}
-	h.withAttachmentURLs(orderID, message)
+	h.withAttachmentURLs(r, orderID, message)
 	respond(w, http.StatusCreated, message)
 }
 
-func (h *Handler) withAttachmentURLs(orderID string, message *Message) {
+func (h *Handler) withAttachmentURLs(r *http.Request, orderID string, message *Message) {
+	prefix := "/api/v1/conversations/orders/"
+	if strings.HasPrefix(r.URL.Path, "/api/v1/customer/conversations/") {
+		prefix = "/api/v1/customer/conversations/orders/"
+	}
 	for _, attachment := range message.Attachments {
-		attachment.URL = "/api/v1/conversations/orders/" + orderID + "/messages/" + message.ID.String() + "/attachments/" + attachment.AssetID.String()
+		attachment.URL = prefix + orderID + "/messages/" + message.ID.String() + "/attachments/" + attachment.AssetID.String()
 	}
 }
 
@@ -122,6 +146,9 @@ func (h *Handler) requireOrderAccess(w http.ResponseWriter, r *http.Request, ord
 		return false
 	}
 
+	if purchase.CustomerID != nil && purchase.CustomerID.String() == middleware.GetUserID(r) {
+		return true
+	}
 	switch middleware.GetRole(r) {
 	case middleware.RoleAdmin:
 		return true

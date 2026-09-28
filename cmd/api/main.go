@@ -209,6 +209,17 @@ func main() {
 		return err
 	}).RegisterRoutes(router)
 
+	// Account-owned customer actions remain available to every authenticated role.
+	// These handlers enforce ownership; they never grant vendor operational access.
+	router.Group(func(r chi.Router) {
+		r.Use(appMiddleware.Authenticate)
+		paymentmethod.NewHandler(paymentMethodService).RegisterRoutes(r)
+		notification.NewHandler(notificationService).RegisterRoutes(r)
+		submission.NewHandler(submissionService).RegisterRoutes(r)
+		payment.NewHandler(paymentService, vendorService, orderService).RegisterCustomerRoutes(r)
+		conversation.NewHandler(conversationService, orderService, inventoryService, vendorService, assetHandler.Storage()).RegisterCustomerRoutes(r)
+	})
+
 	// ── PROTECTED ROUTES (JWT required) ─────────────────────
 	router.Group(func(r chi.Router) {
 		r.Use(appMiddleware.Authenticate)
@@ -231,7 +242,6 @@ func main() {
 		// Inventory
 		inventory.NewHandler(inventoryService, vendorService, userService).RegisterRoutes(r)
 		operatinghours.NewHandler(operatingHoursService, inventoryService, vendorService).RegisterRoutes(r)
-		submission.NewHandler(submissionService).RegisterRoutes(r)
 
 		// Orders
 		order.NewHandler(orderService, db, deliveryPricingService).RegisterRoutes(r)
@@ -263,11 +273,9 @@ func main() {
 
 		// Admin platform management
 		admin.NewHandler(adminService).RegisterRoutes(r)
-		notification.NewHandler(notificationService).RegisterRoutes(r)
 		comms.NewHandler(commsService).RegisterRoutes(r)
 
 		// Payments (protected)
-		paymentmethod.NewHandler(paymentMethodService).RegisterRoutes(r)
 		payment.NewHandler(paymentService, vendorService, orderService).RegisterProtectedRoutes(r)
 	})
 

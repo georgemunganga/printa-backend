@@ -60,7 +60,17 @@ func (h *Handler) RegisterProtectedRoutes(r chi.Router) {
 	})
 }
 
+// Customer endpoints cannot initiate vendor invoices/subscriptions or read another customer's order.
+func (h *Handler) RegisterCustomerRoutes(r chi.Router) {
+	r.Post("/api/v1/customer/payments", func(w http.ResponseWriter, r *http.Request) { h.initiatePayment(w, r, true) })
+	r.Get("/api/v1/customer/payments/order/{order_id}", h.listForCustomerOrder)
+}
+
 func (h *Handler) initiate(w http.ResponseWriter, r *http.Request) {
+	h.initiatePayment(w, r, false)
+}
+
+func (h *Handler) initiatePayment(w http.ResponseWriter, r *http.Request, customerOnly bool) {
 	var req InitiatePaymentRequest
 	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
 		respond(w, http.StatusBadRequest, map[string]string{"error": err.Error()})
@@ -74,6 +84,10 @@ func (h *Handler) initiate(w http.ResponseWriter, r *http.Request) {
 			req.Currency = order.Currency
 			req.VendorID = ""
 		}
+	}
+	if customerOnly && !isOwnedCustomerOrder {
+		respond(w, http.StatusForbidden, map[string]string{"error": "order is not accessible to the authenticated customer"})
+		return
 	}
 	if isOwnedCustomerOrder {
 		// Any authenticated account may pay for an online order it owns, regardless of its operational role.
