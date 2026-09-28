@@ -1,6 +1,6 @@
 # Customer workflow fix — 2026-09-28
 
-Functional source: `eabd3ef`. Backend tests pass for customer order ownership across CUSTOMER, VENDOR, ADMIN, STAFF and CASHIER; non-owners and vendor billing through customer endpoints are rejected. Paused vendor financial operations remain HTTP 423 with a readable code/message. Direct comms-provider sending now requires ADMIN/VENDOR.
+Functional source: `eabd3ef`. Backend tests pass for customer order ownership across CUSTOMER, VENDOR, ADMIN, STAFF and CASHIER; non-owners and vendor billing through customer endpoints are rejected. Paused vendor financial operations remain HTTP 423 with a readable code/message. Direct comms-provider sending rejects CUSTOMER accounts and retains operational ADMIN/VENDOR/STAFF/CASHIER access used by POS receipt emails.
 
 Account-owned payment methods, notifications and support no longer depend on vendor operating prerequisites. Dedicated customer chat/payment routes preserve ownership checks and authenticated attachment downloads. Mobile clients must update to use `/api/v1/customer/...`; original operational routes remain for vendor compatibility.
 

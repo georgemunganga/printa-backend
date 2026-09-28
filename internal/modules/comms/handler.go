@@ -15,8 +15,8 @@ func NewHandler(svc Service) *Handler { return &Handler{svc: svc} }
 
 func (h *Handler) RegisterRoutes(r chi.Router) {
 	r.Route("/api/v1/comms", func(r chi.Router) {
-		// Send a message — available to ADMIN and VENDOR roles
-		r.With(appMiddleware.RequireRole(appMiddleware.RoleAdmin, appMiddleware.RoleVendor)).Post("/send", h.send)
+		// Operational senders include POS staff/cashiers who email receipts. Customer accounts cannot send arbitrary provider messages.
+		r.With(appMiddleware.RequireRole(appMiddleware.RoleAdmin, appMiddleware.RoleVendor, appMiddleware.RoleStaff, appMiddleware.RoleCashier)).Post("/send", h.send)
 
 		// Delivery logs — ADMIN only
 		r.Group(func(r chi.Router) {
